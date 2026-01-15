@@ -10,17 +10,11 @@ from postgrest import SyncPostgrestClient # Легкий клиент для т�
 URL = "https://kgxvjlsojgkkhdaftncg.supabase.co"
 KEY = "sb_publishable_2jhUvmgAKa-edfQyKSWlbA_nKxG65O0"
 
-custom_session = httpx.Client(http2=False)
-
 # Инициализация облегченного клиента для таблиц (заменяет старый supabase клиент)
-supabase = SyncPostgrestClient(
-    f"{URL}/rest/v1",
-    headers={
-        "apikey": KEY,
-        "Authorization": f"Bearer {KEY}"
-    },
-    http_client=custom_session  # Используем наш готовый клиент
-)
+# Инициализация клиента с принудительно отключенным http2 для Pyodide
+supabase = SyncPostgrestClient(f"{URL}/rest/v1", headers={
+    "apikey": KEY, "Authorization": f"Bearer {KEY}"
+}, http_client=httpx.Client(http2=False))
 
 def main(page: ft.Page):
     page.title = "FindCoup v5.2 Platinum"
