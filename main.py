@@ -1,14 +1,21 @@
 import flet as ft
-from supabase import create_client, Client
 import random
 import threading
 import time
 import os
+import httpx  # Используем для загрузки файлов вместо тяжелого storage SDK
 
 # --- НАСТРОЙКИ ПОДКЛЮЧЕНИЯ ---
+from postgrest import SyncPostgrestClient
+
 URL = "https://kgxvjlsojgkkhdaftncg.supabase.co"
 KEY = "sb_publishable_2jhUvmgAKa-edfQyKSWlbA_nKxG65O0"
-supabase: Client = create_client(URL, KEY)
+
+# Инициализация облегченного клиента для таблиц
+supabase = SyncPostgrestClient(f"{URL}/rest/v1", headers={
+    "apikey": KEY,
+    "Authorization": f"Bearer {KEY}"
+})
 
 
 def main(page: ft.Page):
@@ -18,7 +25,6 @@ def main(page: ft.Page):
     page.window_width = 400
     page.window_height = 800
 
-    # Глобальное состояние пользователя
     user_state = {
         "email": "", "gender": "", "username": "",
         "first_name": "", "grade": "", "bio": "", "avatar_url": ""
@@ -28,7 +34,6 @@ def main(page: ft.Page):
     chat_active = False
     reg_temp_avatar_url = ""
 
-    # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
     def show_msg(text, color=ft.Colors.RED_600):
         page.snack_bar = ft.SnackBar(ft.Text(text, color="white"), bgcolor=color)
         page.snack_bar.open = True
@@ -41,19 +46,35 @@ def main(page: ft.Page):
             print(f"Error: {e}")
             return None
 
-    # --- ЗАГРУЗКА ФОТО В STORAGE ---
+    # --- ЗАГРУЗКА ФОТО В STORAGE (ОБЛЕГЧЕННАЯ ВЕРСИЯ) ---
     def upload_image_to_supabase(file_path, username_prefix="user"):
         try:
             file_name = f"{username_prefix}_{int(time.time())}.png"
+            # Читаем файл
             with open(file_path, "rb") as f:
                 file_data = f.read()
-                supabase.storage.from_("avatars").upload(file_name, file_data)
-            public_url = supabase.storage.from_("avatars").get_public_url(file_name)
-            return public_url
+
+            # Отправляем файл напрямую через REST API Storage
+            upload_url = f"{URL}/storage/v1/object/avatars/{file_name}"
+            headers = {
+                "apikey": KEY,
+                "Authorization": f"Bearer {KEY}",
+                "Content-Type": "image/png"
+            }
+
+            with httpx.Client() as client:
+                response = client.post(upload_url, headers=headers, content=file_data)
+                if response.status_code == 200:
+                    public_url = f"{URL}/storage/v1/render/image/public/avatars/{file_name}"
+                    return public_url
+                else:
+                    print(f"Storage Error: {response.text}")
+                    return None
         except Exception as e:
             print(f"Upload Error: {e}")
             show_msg(f"Ошибка загрузки: {e}")
             return None
+
 
     # --- СЧЕТЧИКИ СООБЩЕНИЙ ---
     def get_unread_total():
