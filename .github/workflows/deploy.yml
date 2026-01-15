@@ -11,22 +11,27 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Setup Python
-        uses: actions/setup-python@v5 # Обновлено до v5
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           
       - name: Install Dependencies
         run: |
-          pip install flet
-          pip install -r requirements.txt
+          python -m pip install --upgrade pip
+          pip install flet supabase
+          # Если у вас есть requirements.txt, раскомментируйте строку ниже:
+          # pip install -r requirements.txt
           
+      - name: Debug Files
+        run: ls -R  # Это поможет нам увидеть в логах, где лежит ваш main.py
+
       - name: Build Web App
         run: |
-          # Собираем проект в папку dist
+          # Собираем проект. Если файл называется иначе, замените main.py ниже:
           flet publish main.py --base-url /${{ github.event.repository.name }}/
           
       - name: Upload Artifact
-        uses: actions/upload-pages-artifact@v3 # Исправлено на v3 (для Pages это актуальная версия)
+        uses: actions/upload-pages-artifact@v3
         with:
           path: dist/
 
@@ -42,4 +47,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4 # Исправлено на v4
+        uses: actions/deploy-pages@v4
