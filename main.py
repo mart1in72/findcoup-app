@@ -4,19 +4,17 @@ import threading
 import time
 import os
 import httpx  # Используем для загрузки файлов вместо тяжелого storage SDK
+from postgrest import SyncPostgrestClient # Легкий клиент для таблиц
 
 # --- НАСТРОЙКИ ПОДКЛЮЧЕНИЯ ---
-from postgrest import SyncPostgrestClient
-
 URL = "https://kgxvjlsojgkkhdaftncg.supabase.co"
 KEY = "sb_publishable_2jhUvmgAKa-edfQyKSWlbA_nKxG65O0"
 
-# Инициализация облегченного клиента для таблиц
+# Инициализация облегченного клиента для таблиц (заменяет старый supabase клиент)
 supabase = SyncPostgrestClient(f"{URL}/rest/v1", headers={
     "apikey": KEY,
     "Authorization": f"Bearer {KEY}"
 })
-
 
 def main(page: ft.Page):
     page.title = "FindCoup v5.2 Platinum"
@@ -46,15 +44,15 @@ def main(page: ft.Page):
             print(f"Error: {e}")
             return None
 
-    # --- ЗАГРУЗКА ФОТО В STORAGE (ОБЛЕГЧЕННАЯ ВЕРСИЯ) ---
+    # --- ЗАГРУЗКА ФОТО В STORAGE (ИЗМЕНЕНО: БЕЗ ИСПОЛЬЗОВАНИЯ SUPABASE SDK) ---
     def upload_image_to_supabase(file_path, username_prefix="user"):
         try:
             file_name = f"{username_prefix}_{int(time.time())}.png"
-            # Читаем файл
+            # Читаем файл в бинарном режиме
             with open(file_path, "rb") as f:
                 file_data = f.read()
 
-            # Отправляем файл напрямую через REST API Storage
+            # Отправляем файл напрямую через REST API Storage (Bucket: avatars)
             upload_url = f"{URL}/storage/v1/object/avatars/{file_name}"
             headers = {
                 "apikey": KEY,
@@ -65,7 +63,8 @@ def main(page: ft.Page):
             with httpx.Client() as client:
                 response = client.post(upload_url, headers=headers, content=file_data)
                 if response.status_code == 200:
-                    public_url = f"{URL}/storage/v1/render/image/public/avatars/{file_name}"
+                    # Формируем публичную ссылку (render используется для оптимизации)
+                    public_url = f"{URL}/storage/v1/object/public/avatars/{file_name}"
                     return public_url
                 else:
                     print(f"Storage Error: {response.text}")
@@ -74,7 +73,6 @@ def main(page: ft.Page):
             print(f"Upload Error: {e}")
             show_msg(f"Ошибка загрузки: {e}")
             return None
-
 
     # --- СЧЕТЧИКИ СООБЩЕНИЙ ---
     def get_unread_total():
@@ -131,7 +129,6 @@ def main(page: ft.Page):
                 username_val = un.value.strip()
                 password_val = ps.value.strip()
 
-                # Сброс стилей перед проверкой
                 un.error_text = None
                 ps.error_text = None
                 un.border_color = ft.Colors.GREY_800
@@ -147,12 +144,10 @@ def main(page: ft.Page):
 
                 if res and res.data:
                     user_data = res.data[0]
-                    # СТРОГАЯ ПРОВЕРКА ПАРОЛЯ
                     if str(user_data.get("password")) == password_val:
                         user_state.update(user_data)
                         page.go("/feed")
                     else:
-                        # ВЫВОД КРАСНОЙ ОШИБКИ ПРИ НЕВЕРНОМ ПАРОЛЕ
                         ps.error_text = "Неверный пароль! Попробуйте еще раз"
                         ps.border_color = ft.Colors.RED_600
                         show_msg("Ошибка доступа: неверный пароль", ft.Colors.RED_600)
@@ -167,7 +162,7 @@ def main(page: ft.Page):
                 ft.Container(height=80),
                 ft.Icon(ft.Icons.FAVORITE, color=ft.Colors.RED, size=100),
                 ft.Text("FindCoup", size=35, weight="bold", color="white"),
-                ft.Text("Найди себе пару на школьный бал", color=ft.Colors.GREY_500),
+                ft.Text("Найди себе пару на школьный бал :)", color=ft.Colors.GREY_500),
                 ft.Container(height=20),
                 un, ps,
                 ft.Container(height=10),
@@ -179,7 +174,6 @@ def main(page: ft.Page):
                               style=ft.ButtonStyle(color=ft.Colors.GREY_500))
             ], horizontal_alignment="center", bgcolor="black"))
 
-        # --- НОВЫЙ ЭКРАН: СБРОС ПАРОЛЯ ---
         elif page.route == "/reset_password":
             rs_un = ft.TextField(label="Ваш Никнейм (с @)", width=300, border_color=ft.Colors.GREY_800)
             rs_new_ps = ft.TextField(label="Новый пароль", password=True, width=300, border_color=ft.Colors.GREY_800)
@@ -214,7 +208,6 @@ def main(page: ft.Page):
                 ft.TextButton("Вернуться назад", on_click=lambda _: page.go("/"), style=ft.ButtonStyle(color="white"))
             ], horizontal_alignment="center", bgcolor="black"))
 
-        # 2. ЭКРАН РЕГИСТРАЦИИ
         elif page.route == "/register":
             reg_temp_avatar_url = ""
             r_fn = ft.TextField(label="Ваше Имя", width=300, border_color=ft.Colors.GREY_800)
@@ -222,7 +215,7 @@ def main(page: ft.Page):
             r_ps = ft.TextField(label="Придумайте Пароль", password=True, width=300, border_color=ft.Colors.GREY_800)
             r_gn = ft.Dropdown(label="Ваш Пол", width=300, border_color=ft.Colors.GREY_800,
                                options=[ft.dropdown.Option("Парень"), ft.dropdown.Option("Девушка")])
-            r_bio = ft.TextField(label="О себе коротко", width=300, multiline=True, max_lines=3,
+            r_bio = ft.TextField(label="Напиши о себе", width=300, multiline=True, max_lines=3,
                                  border_color=ft.Colors.GREY_800)
             avatar_preview = ft.CircleAvatar(radius=50, bgcolor=ft.Colors.GREY_900,
                                              content=ft.Icon(ft.Icons.PERSON, size=40))
@@ -280,7 +273,6 @@ def main(page: ft.Page):
                 ], horizontal_alignment="center", scroll=ft.ScrollMode.AUTO, spacing=15)
             ], bgcolor="black", horizontal_alignment="center"))
 
-        # 3. ЭКРАН ЛЕНТЫ
         elif page.route == "/feed":
             card_res = ft.Column(horizontal_alignment="center", spacing=15)
 
@@ -334,7 +326,6 @@ def main(page: ft.Page):
             ], bgcolor="black", horizontal_alignment="center"))
             load_next()
 
-        # 4. ЭКРАН МЭТЧЕЙ
         elif page.route == "/matches":
             match_list = ft.ListView(expand=True, spacing=10, padding=10)
             my_likes = safe_query(
@@ -364,7 +355,6 @@ def main(page: ft.Page):
                 match_list
             ], bgcolor="black"))
 
-        # 5. ЭКРАН СПИСКА ЧАТОВ
         elif page.route == "/messages":
             chats_list = ft.ListView(expand=True)
             msgs = safe_query(lambda: supabase.table("messages").select("sender_email, receiver_email").or_(
@@ -392,7 +382,6 @@ def main(page: ft.Page):
                 chats_list
             ], bgcolor="black"))
 
-        # 6. ЭКРАН ПЕРЕПИСКИ
         elif page.route == "/chat":
             chat_active = True
             msg_list = ft.ListView(expand=True, spacing=10, padding=10, auto_scroll=True)
@@ -442,7 +431,6 @@ def main(page: ft.Page):
                     padding=15)
             ], bgcolor="black"))
 
-        # 7. ЭКРАН ПРОФИЛЯ
         elif page.route == "/profile":
             p_un = ft.TextField(label="Никнейм", value=user_state["username"], border_color=ft.Colors.GREY_800)
             p_fn = ft.TextField(label="Имя", value=user_state["first_name"], border_color=ft.Colors.GREY_800)
@@ -498,5 +486,4 @@ def main(page: ft.Page):
     page.on_route_change = route_change
     page.go("/")
 
-
-ft.app(target=main, view=ft.AppView.WEB_BROWSER)
+ft.app(target=main)
