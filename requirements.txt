@@ -1,2 +1,3 @@
 flet
 postgrest
+httpx
