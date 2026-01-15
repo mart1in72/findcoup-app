@@ -1,88 +1,93 @@
 import flet as ft
-import random
 import time
-import httpx 
-from postgrest import SyncPostgrestClient
+import httpx
 
-# Данные Supabase
+# Константы вынесены отдельно
 URL = "https://kgxvjlsojgkkhdaftncg.supabase.co"
 KEY = "sb_publishable_2jhUvmgAKa-edfQyKSWlbA_nKxG65O0"
 
-# Клиент с выключенным HTTP/2
-custom_session = httpx.Client(http2=False)
-supabase = SyncPostgrestClient(
-    f"{URL}/rest/v1", 
-    headers={"apikey": KEY, "Authorization": f"Bearer {KEY}"},
-    http_client=custom_session
-)
-
 def main(page: ft.Page):
-    # Даем браузеру 0.5 сек на подготовку
-    time.sleep(0.5)
-    
-    page.title = "FindCoup"
+    # 1. Настройки страницы (срабатывают мгновенно)
+    page.title = "FindCoup v1.0"
     page.theme_mode = ft.ThemeMode.DARK
-    page.bgcolor = ft.Colors.BLACK
-    page.padding = 0
+    page.bgcolor = "#000000"
+    page.vertical_alignment = ft.MainAxisAlignment.CENTER
+    page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
 
-    user_state = {"email": "", "username": "", "avatar_url": ""}
+    # 2. Переменные для хранения данных
+    user_data = {"name": "", "logged_in": False}
 
-    def route_change(e):
-        page.views.clear()
+    # 3. Функция для переключения экранов (простая смена контента)
+    def show_screen(screen_type):
+        page.controls.clear()
         
-        # ЭКРАН ВХОДА (ЛОГИН)
-        if page.route == "/" or page.route == "":
-            un = ft.TextField(label="Никнейм (@)", width=300)
-            ps = ft.TextField(label="Пароль", password=True, width=300)
+        if screen_type == "login":
+            # ЭКРАН ЛОГИНА
+            login_input = ft.TextField(label="Никнейм", width=280, border_radius=10)
+            pass_input = ft.TextField(label="Пароль", password=True, can_reveal_password=True, width=280, border_radius=10)
+            
+            def on_login_click(e):
+                if login_input.value:
+                    user_data["name"] = login_input.value
+                    show_screen("feed")
+                else:
+                    page.snack_bar = ft.SnackBar(ft.Text("Введите никнейм"))
+                    page.snack_bar.open = True
+                    page.update()
 
-            def login_click(_):
-                # Упрощенная логика для теста: входим сразу
-                user_state["username"] = un.value
-                page.go("/feed")
-
-            page.views.append(
-                ft.View(
-                    "/",
-                    [
-                        ft.Container(height=100),
-                        ft.Icon(ft.Icons.FAVORITE, color="red", size=80),
-                        ft.Text("FindCoup", size=30, weight="bold"),
-                        ft.Container(height=20),
-                        un, 
-                        ps,
-                        ft.ElevatedButton("ВОЙТИ", width=300, on_click=login_click),
-                    ],
-                    horizontal_alignment="center",
-                )
+            page.add(
+                ft.Icon(ft.Icons.FAVORITE, color="red", size=60),
+                ft.Text("FindCoup", size=30, weight="bold"),
+                ft.Text("Вход в систему", color="grey"),
+                ft.Container(height=20),
+                login_input,
+                pass_input,
+                ft.Container(height=10),
+                ft.ElevatedButton(
+                    "ВОЙТИ", 
+                    width=280, 
+                    bgcolor="red", 
+                    color="white", 
+                    on_click=on_login_click
+                ),
+                ft.TextButton("Регистрация", on_click=lambda _: show_screen("reg"))
             )
-        
-        # ЭКРАН ЛЕНТЫ
-        elif page.route == "/feed":
-            page.views.append(
-                ft.View(
-                    "/feed",
-                    [
-                        ft.AppBar(title=ft.Text("Лента"), bgcolor=ft.Colors.SURFACE_VARIANT),
+            
+        elif screen_type == "feed":
+            # ЭКРАН ЛЕНТЫ
+            page.add(
+                ft.AppBar(title=ft.Text(f"Привет, {user_data['name']}!"), bgcolor="#1a1a1a"),
+                ft.Container(
+                    content=ft.Column([
                         ft.Container(
-                            content=ft.Column([
-                                ft.Icon(ft.Icons.PERSON, size=100),
-                                ft.Text("Добро пожаловать!", size=20)
-                            ], horizontal_alignment="center"),
-                            expand=True,
-                            alignment=ft.alignment.center
+                            width=300, height=400, bgcolor="#222222", border_radius=20,
+                            content=ft.Icon(ft.Icons.PERSON, size=100, color="grey")
                         ),
-                        ft.ElevatedButton("Назад", on_click=lambda _: page.go("/"))
-                    ]
-                )
+                        ft.Text("Поиск анкет...", size=20),
+                        ft.Row([
+                            ft.IconButton(ft.Icons.CLOSE, icon_size=40, on_click=lambda _: show_screen("feed")),
+                            ft.IconButton(ft.Icons.FAVORITE, icon_size=40, icon_color="red", on_click=lambda _: show_screen("feed")),
+                        ], alignment="center")
+                    ], horizontal_alignment="center"),
+                    expand=True, alignment=ft.alignment.center
+                ),
+                ft.TextButton("Выход", on_click=lambda _: show_screen("login"))
             )
+
+        elif screen_type == "reg":
+            # ЭКРАН РЕГИСТРАЦИИ
+            page.add(
+                ft.Text("Регистрация", size=25, weight="bold"),
+                ft.TextField(label="Имя", width=280),
+                ft.TextField(label="Никнейм (@)", width=280),
+                ft.ElevatedButton("Создать", on_click=lambda _: show_screen("feed")),
+                ft.TextButton("Назад", on_click=lambda _: show_screen("login"))
+            )
+
         page.update()
 
-    # Привязываем события
-    page.on_route_change = route_change
-    
-    # ПРИНУДИТЕЛЬНЫЙ запуск первого экрана
-    page.go("/")
+    # Запуск первого экрана
+    show_screen("login")
 
-# Запуск приложения
-if __name__ == "__main__":
-    ft.app(target=main)
+# Точка входа для веба
+ft.app(main)
