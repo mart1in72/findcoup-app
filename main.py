@@ -1,5 +1,6 @@
 import flet as ft
 import random
+import asyncio
 import threading
 import time
 import os
@@ -441,8 +442,11 @@ def main(page: ft.Page):
                     except:
                         pass
 
-            threading.Thread(target=lambda: (time.sleep(2), refresh_chat() if chat_active else None),
-                             daemon=True).start()
+            async def chat_tick():
+                await asyncio.sleep(2)
+                refresh_chat()
+
+            page.run_task(chat_tick)
             refresh_chat()
             page.views.append(ft.View("/chat", [
                 ft.AppBar(title=ft.Row(
@@ -503,23 +507,17 @@ def main(page: ft.Page):
 
         page.update()
 
-    def open_chat(u):
-        current_chat_partner.update(
-            {"email": u['email'], "username": u['username'], "avatar_url": u.get("avatar_url", "")})
-        page.go("/chat")
+        def open_chat(u):
+            current_chat_partner.update(
+                {"email": u['email'], "username": u['username'], "avatar_url": u.get("avatar_url", "")})
+            page.go("/chat")
 
-    page.on_route_change = route_change
+        page.on_route_change = route_change
 
-    # Пытаемся перейти на главную страницу (совместимо со всеми версиями)
-    if hasattr(page, "push_route"):
-        page.push_route("/")
-    else:
+        # Запуск фоновых задач и переход на главную
+        page.run_task(update_unread_data)
         page.go("/")
 
-
-# Запуск приложения (совместимо со всеми версиями)
-if __name__ == "__main__":
-    if hasattr(ft, "run"):
-        ft.run(main)
-    else:
+    # Запуск приложения
+    if __name__ == "__main__":
         ft.app(target=main)
