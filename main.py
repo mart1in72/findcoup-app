@@ -25,7 +25,8 @@ def main(page: ft.Page):
 
     user_state = {
         "email": "", "gender": "", "username": "",
-        "first_name": "", "grade": "", "bio": "", "avatar_url": ""
+        "first_name": "", "grade": "", "bio": "", "avatar_url": "",
+        "unread_count": 0  # Новое поле
     }
 
     current_chat_partner = {"email": "", "username": ""}
@@ -43,6 +44,27 @@ def main(page: ft.Page):
         except Exception as e:
             print(f"Error: {e}")
             return None
+
+    def update_unread_data():
+        while True:
+            if user_state["email"]:
+                res = safe_query(
+                    lambda: supabase.table("messages")
+                    .select("id", count="exact")
+                    .eq("receiver_email", user_state["email"])
+                    .eq("is_read", False)
+                    .execute()
+                )
+                if res and res.count is not None:
+                    user_state["unread_count"] = res.count
+                    try:
+                        page.update()  # Обновляем страницу, чтобы Tabs перерисовались с цифрой
+                    except:
+                        pass
+            time.sleep(10)  # Проверка раз в 10 секунд
+
+    # Запускаем поток обновления сразу в main
+    threading.Thread(target=update_unread_data, daemon=True).start()
 
     # --- ЗАГРУЗКА ФОТО В STORAGE (ИЗМЕНЕНО: БЕЗ ИСПОЛЬЗОВАНИЯ SUPABASE SDK) ---
     def upload_image_to_supabase(file_path, username_prefix="user"):
@@ -95,8 +117,9 @@ def main(page: ft.Page):
 
     # --- НАВИГАЦИЯ ---
     def get_nav(idx):
-        unread = get_unread_total()
+        unread = user_state["unread_count"]
         chat_label = f"Чаты ({unread})" if unread > 0 else "Чаты"
+
         return ft.Tabs(
             selected_index=idx,
             on_change=lambda e: page.go(["/feed", "/matches", "/messages", "/profile"][e.control.selected_index]),
@@ -484,6 +507,17 @@ def main(page: ft.Page):
         page.go("/chat")
 
     page.on_route_change = route_change
-    page.go("/")
 
-ft.app(target=main)
+    # Пытаемся перейти на главную страницу (совместимо со всеми версиями)
+    if hasattr(page, "push_route"):
+        page.push_route("/")
+    else:
+        page.go("/")
+
+
+# Запуск приложения (совместимо со всеми версиями)
+if __name__ == "__main__":
+    if hasattr(ft, "run"):
+        ft.run(main)
+    else:
+        ft.app(target=main)
