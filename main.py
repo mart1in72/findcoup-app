@@ -45,7 +45,9 @@ def main(page: ft.Page):
             print(f"Error: {e}")
             return None
 
-    def update_unread_data():
+        # Изменяем на асинхронную версию
+    async def update_unread_data():
+        import asyncio  # Импортируем внутри или в начале файла
         while True:
             if user_state["email"]:
                 res = safe_query(
@@ -58,13 +60,13 @@ def main(page: ft.Page):
                 if res and res.count is not None:
                     user_state["unread_count"] = res.count
                     try:
-                        page.update()  # Обновляем страницу, чтобы Tabs перерисовались с цифрой
+                        page.update()
                     except:
                         pass
-            time.sleep(10)  # Проверка раз в 10 секунд
+                # ВАЖНО: в браузере используем только asyncio.sleep
+                await asyncio.sleep(10)
 
-    # Запускаем поток обновления сразу в main
-    threading.Thread(target=update_unread_data, daemon=True).start()
+
 
     # --- ЗАГРУЗКА ФОТО В STORAGE (ИЗМЕНЕНО: БЕЗ ИСПОЛЬЗОВАНИЯ SUPABASE SDK) ---
     def upload_image_to_supabase(file_path, username_prefix="user"):
