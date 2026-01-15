@@ -1,2 +1,2 @@
 flet
-supabase
+supabase==2.4.3
