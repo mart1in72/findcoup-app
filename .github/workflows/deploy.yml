@@ -1,0 +1,44 @@
+name: Deploy Flet App to Pages
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          
+      - name: Install Dependencies
+        run: |
+          pip install flet
+          pip install -r requirements.txt
+          
+      - name: Build Web App
+        run: |
+          flet publish main.py --base-url /${{ github.event.repository.name }}/
+          
+      - name: Upload Artifact
+        uses: actions/upload-pages-artifact@v2
+        with:
+          path: dist/
+
+  deploy:
+    needs: build
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v2
