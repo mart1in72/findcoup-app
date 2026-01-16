@@ -129,6 +129,7 @@ def main(page: ft.Page):
         )
 
     def route_change(route):
+        print(f"Переход на маршрут: {page.route}") # Это покажет в консоли, доходит ли код до отрисовки
         nonlocal chat_active, reg_temp_avatar_url
         chat_active = False
         page.overlay.clear()
