@@ -114,8 +114,8 @@ def main(page: ft.Page):
 
         return ft.Tabs(
             selected_index=idx,
-            # ЗАМЕНА: page.go -> page.push_route
-            on_change=lambda e: page.push_route(["/feed", "/matches", "/messages", "/profile"][e.control.selected_index]),
+            # ЗАМЕНА: page.push_route -> page.run_task(page.push_route, ...)
+            on_change=lambda e: page.run_task(page.push_route, ["/feed", "/matches", "/messages", "/profile"][e.control.selected_index]),
             divider_color=ft.Colors.GREY_900,
             indicator_color=ft.Colors.RED,
             label_color=ft.Colors.RED,
@@ -160,8 +160,8 @@ def main(page: ft.Page):
                     user_data = res.data[0]
                     if str(user_data.get("password")) == password_val:
                         user_state.update(user_data)
-                        # ЗАМЕНА: page.go -> page.push_route
-                        page.push_route("/feed")
+                        # ЗАМЕНА: page.push_route -> page.run_task(page.push_route, ...)
+                        page.run_task(page.push_route, "/feed")
                     else:
                         ps.error_text = "Неверный пароль! Попробуйте еще раз"
                         ps.border_color = ft.Colors.RED_600
@@ -183,11 +183,11 @@ def main(page: ft.Page):
                 ft.Container(height=10),
                 ft.ElevatedButton("ВОЙТИ", width=300, height=50, bgcolor=ft.Colors.RED, color="white",
                                   on_click=login_click),
-                # ЗАМЕНА: page.go -> page.push_route
-                ft.TextButton("Создать новый аккаунт", on_click=lambda _: page.push_route("/register"),
+                # ЗАМЕНА: page.push_route -> page.run_task(page.push_route, ...)
+                ft.TextButton("Создать новый аккаунт", on_click=lambda _: page.run_task(page.push_route, "/register"),
                               style=ft.ButtonStyle(color="white")),
-                # ЗАМЕНА: page.go -> page.push_route
-                ft.TextButton("Забыли пароль?", on_click=lambda _: page.push_route("/reset_password"),
+                # ЗАМЕНА: page.push_route -> page.run_task(page.push_route, ...)
+                ft.TextButton("Забыли пароль?", on_click=lambda _: page.run_task(page.push_route, "/reset_password"),
                               style=ft.ButtonStyle(color=ft.Colors.GREY_500))
             ], horizontal_alignment="center", bgcolor="black"))
 
@@ -208,8 +208,8 @@ def main(page: ft.Page):
                                                                                                  target_un).execute())
                     if upd:
                         show_msg("Пароль успешно изменен!", ft.Colors.GREEN_700)
-                        # ЗАМЕНА: page.go -> page.push_route
-                        page.push_route("/")
+                        # ЗАМЕНА: page.push_route -> page.run_task(page.push_route, ...)
+                        page.run_task(page.push_route, "/")
                 else:
                     show_msg("Пользователь не найден!", ft.Colors.RED_600)
 
@@ -223,8 +223,8 @@ def main(page: ft.Page):
                 ft.Container(height=20),
                 ft.ElevatedButton("ОБНОВИТЬ ПАРОЛЬ", width=300, height=50, bgcolor=ft.Colors.RED, color="white",
                                   on_click=reset_click),
-                # ЗАМЕНА: page.go -> page.push_route
-                ft.TextButton("Вернуться назад", on_click=lambda _: page.push_route("/"), style=ft.ButtonStyle(color="white"))
+                # ЗАМЕНА: page.push_route -> page.run_task(page.push_route, ...)
+                ft.TextButton("Вернуться назад", on_click=lambda _: page.run_task(page.push_route, "/"), style=ft.ButtonStyle(color="white"))
             ], horizontal_alignment="center", bgcolor="black"))
 
         elif page.route == "/register":
@@ -270,8 +270,8 @@ def main(page: ft.Page):
                 }
                 if safe_query(lambda: supabase.table("profiles").insert(data).execute()):
                     user_state.update(data)
-                    # ЗАМЕНА: page.go -> page.push_route
-                    page.push_route("/feed")
+                    # ЗАМЕНА: page.push_route -> page.run_task(page.push_route, ...)
+                    page.run_task(page.push_route, "/feed")
                 else:
                     show_msg("Этот никнейм уже кем-то занят.", ft.Colors.RED_600)
 
@@ -354,8 +354,8 @@ def main(page: ft.Page):
                 for item in my_likes.data:
                     mutual = safe_query(
                         lambda: supabase.table("likes").select("*").eq("from_email", item['to_email']).eq("to_email",
-                                                                                                         user_state[
-                                                                                                             "email"]).execute())
+                                                                                                       user_state[
+                                                                                                           "email"]).execute())
                     if mutual and mutual.data:
                         u_res = safe_query(lambda: supabase.table("profiles").select("*").eq("email", item[
                             'to_email']).single().execute())
@@ -446,9 +446,9 @@ def main(page: ft.Page):
                 ft.AppBar(title=ft.Row(
                     [ft.CircleAvatar(foreground_image_src=current_chat_partner.get("avatar_url", ""), radius=15),
                      ft.Text(f" {current_chat_partner['username']}")]), bgcolor="black",
-                          # ЗАМЕНА: page.go -> page.push_route
+                          # ЗАМЕНА: page.push_route -> page.run_task(page.push_route, ...)
                           leading=ft.IconButton(ft.Icons.ARROW_BACK, icon_color=ft.Colors.RED,
-                                                on_click=lambda _: page.push_route("/messages"))),
+                                                on_click=lambda _: page.run_task(page.push_route, "/messages"))),
                 msg_list,
                 ft.Container(
                     ft.Row([msg_in, ft.IconButton(ft.Icons.SEND_ROUNDED, icon_color=ft.Colors.RED, on_click=send_msg)]),
@@ -468,8 +468,8 @@ def main(page: ft.Page):
                     if url:
                         user_state["avatar_url"] = url
                         show_msg("Успешно! Нажмите сохранить.", ft.Colors.GREEN_700)
-                        # ЗАМЕНА: page.go -> page.push_route
-                        page.push_route("/profile")
+                        # ЗАМЕНА: page.push_route -> page.run_task(page.push_route, ...)
+                        page.run_task(page.push_route, "/profile")
 
             prof_file_picker = ft.FilePicker(on_result=on_prof_file_picked)
             page.overlay.append(prof_file_picker)
@@ -497,8 +497,8 @@ def main(page: ft.Page):
                     p_un, p_fn, p_bio,
                     ft.ElevatedButton("СОХРАНИТЬ", width=300, height=50, bgcolor=ft.Colors.RED, color="white",
                                       on_click=save_profile),
-                    # ЗАМЕНА: page.go -> page.push_route
-                    ft.TextButton("Выйти", style=ft.ButtonStyle(color=ft.Colors.RED), on_click=lambda _: page.push_route("/"))
+                    # ЗАМЕНА: page.push_route -> page.run_task(page.push_route, ...)
+                    ft.TextButton("Выйти", style=ft.ButtonStyle(color=ft.Colors.RED), on_click=lambda _: page.run_task(page.push_route, "/"))
                 ], horizontal_alignment="center", spacing=15, scroll=ft.ScrollMode.AUTO), padding=20)
             ], bgcolor="black", horizontal_alignment="center"))
 
@@ -507,16 +507,16 @@ def main(page: ft.Page):
     def open_chat(u):
         current_chat_partner.update(
             {"email": u['email'], "username": u['username'], "avatar_url": u.get("avatar_url", "")})
-        # ЗАМЕНА: page.go -> page.push_route
-        page.push_route("/chat")
+        # ЗАМЕНА: page.push_route -> page.run_task(page.push_route, ...)
+        page.run_task(page.push_route, "/chat")
 
     # Привязываем обработчик и запускаем
     page.on_route_change = route_change
     page.run_task(update_unread_data)
     
     # ИСПРАВЛЕНИЕ ЧЕРНОГО ЭКРАНА:
-    # ЗАМЕНА: page.go -> page.push_route
-    page.push_route("/")
+    # ЗАМЕНА: page.push_route -> page.run_task(page.push_route, ...)
+    page.run_task(page.push_route, "/")
 
 # Запуск приложения
 if __name__ == "__main__":
