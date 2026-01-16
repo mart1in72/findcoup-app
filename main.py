@@ -49,20 +49,14 @@ def main(page: ft.Page):
         import asyncio
         while True:
             if user_state["email"]:
-                res = safe_query(
-                    lambda: supabase.table("messages")
-                    .select("id", count="exact")
-                    .eq("receiver_email", user_state["email"])
-                    .eq("is_read", False)
-                    .execute()
-                )
-                if res and res.count is not None:
+                res = safe_query(lambda: supabase.table("messages").select("id", count="exact").eq("receiver_email", user_state["email"]).eq("is_read", False).execute())
+                if res and hasattr(res, 'count') and res.count is not None:
                     user_state["unread_count"] = res.count
-                    try:
-                        page.update()
-                    except:
-                        pass
-                await asyncio.sleep(10)
+                elif res and hasattr(res, 'data'):
+                    user_state["unread_count"] = len(res.data)
+                try: page.update()
+                except: pass
+            await asyncio.sleep(10)
 
     def upload_image_to_supabase(file_path, username_prefix="user"):
         try:
