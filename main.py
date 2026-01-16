@@ -507,17 +507,19 @@ def main(page: ft.Page):
 
         page.update()
 
-        def open_chat(u):
-            current_chat_partner.update(
-                {"email": u['email'], "username": u['username'], "avatar_url": u.get("avatar_url", "")})
-            page.go("/chat")
+    # Эти функции должны быть определены в main, но не внутри route_change
+    def open_chat(u):
+        current_chat_partner.update(
+            {"email": u['email'], "username": u['username'], "avatar_url": u.get("avatar_url", "")})
+        page.go("/chat")
 
-        page.on_route_change = route_change
+    # Привязываем обработчик и запускаем
+    page.on_route_change = route_change
+    page.run_task(update_unread_data)
+    
+    # Делаем небольшую паузу для инициализации, если это Web
+    page.go("/")
 
-        # Запуск фоновых задач и переход на главную
-        page.run_task(update_unread_data)
-        page.go("/")
-
-    # Запуск приложения
-    if __name__ == "__main__":
-        ft.app(target=main)
+# Запуск приложения
+if __name__ == "__main__":
+    ft.app(target=main)
