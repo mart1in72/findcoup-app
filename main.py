@@ -11,8 +11,7 @@ from postgrest import SyncPostgrestClient # Легкий клиент для т�
 URL = "https://kgxvjlsojgkkhdaftncg.supabase.co"
 KEY = "sb_publishable_2jhUvmgAKa-edfQyKSWlbA_nKxG65O0"
 
-# Инициализация облегченного клиента для таблиц (заменяет старый supabase клиент)
-# Инициализация клиента с принудительно отключенным http2 для Pyodide
+# Инициализация облегченного клиента для таблиц
 supabase = SyncPostgrestClient(f"{URL}/rest/v1", headers={
     "apikey": KEY, "Authorization": f"Bearer {KEY}"
 }, http_client=httpx.Client(http2=False))
@@ -46,9 +45,8 @@ def main(page: ft.Page):
             print(f"Error: {e}")
             return None
 
-        # Изменяем на асинхронную версию
     async def update_unread_data():
-        import asyncio  # Импортируем внутри или в начале файла
+        import asyncio
         while True:
             if user_state["email"]:
                 res = safe_query(
@@ -64,20 +62,14 @@ def main(page: ft.Page):
                         page.update()
                     except:
                         pass
-                # ВАЖНО: в браузере используем только asyncio.sleep
                 await asyncio.sleep(10)
 
-
-
-    # --- ЗАГРУЗКА ФОТО В STORAGE (ИЗМЕНЕНО: БЕЗ ИСПОЛЬЗОВАНИЯ SUPABASE SDK) ---
     def upload_image_to_supabase(file_path, username_prefix="user"):
         try:
             file_name = f"{username_prefix}_{int(time.time())}.png"
-            # Читаем файл в бинарном режиме
             with open(file_path, "rb") as f:
                 file_data = f.read()
 
-            # Отправляем файл напрямую через REST API Storage (Bucket: avatars)
             upload_url = f"{URL}/storage/v1/object/avatars/{file_name}"
             headers = {
                 "apikey": KEY,
@@ -88,7 +80,6 @@ def main(page: ft.Page):
             with httpx.Client() as client:
                 response = client.post(upload_url, headers=headers, content=file_data)
                 if response.status_code == 200:
-                    # Формируем публичную ссылку (render используется для оптимизации)
                     public_url = f"{URL}/storage/v1/object/public/avatars/{file_name}"
                     return public_url
                 else:
@@ -99,7 +90,6 @@ def main(page: ft.Page):
             show_msg(f"Ошибка загрузки: {e}")
             return None
 
-    # --- СЧЕТЧИКИ СООБЩЕНИЙ ---
     def get_unread_total():
         if not user_state["email"]: return 0
         res = safe_query(
@@ -118,14 +108,14 @@ def main(page: ft.Page):
             lambda: supabase.table("messages").update({"is_read": True}).eq("receiver_email", user_state["email"]).eq(
                 "sender_email", sender_email).eq("is_read", False).execute())
 
-    # --- НАВИГАЦИЯ ---
     def get_nav(idx):
         unread = user_state["unread_count"]
         chat_label = f"Чаты ({unread})" if unread > 0 else "Чаты"
 
         return ft.Tabs(
             selected_index=idx,
-            on_change=lambda e: page.go(["/feed", "/matches", "/messages", "/profile"][e.control.selected_index]),
+            # ЗАМЕНА: page.go -> page.push_route
+            on_change=lambda e: page.push_route(["/feed", "/matches", "/messages", "/profile"][e.control.selected_index]),
             divider_color=ft.Colors.GREY_900,
             indicator_color=ft.Colors.RED,
             label_color=ft.Colors.RED,
@@ -138,14 +128,12 @@ def main(page: ft.Page):
             ]
         )
 
-    # ================= РОУТИНГ =================
     def route_change(route):
         nonlocal chat_active, reg_temp_avatar_url
         chat_active = False
         page.overlay.clear()
         page.views.clear()
 
-        # 1. ЭКРАН ВХОДА
         if page.route == "/":
             un = ft.TextField(label="Никнейм (с @)", width=300, border_color=ft.Colors.GREY_800, border_radius=10)
             ps = ft.TextField(label="Пароль", password=True, width=300, border_color=ft.Colors.GREY_800,
@@ -172,7 +160,8 @@ def main(page: ft.Page):
                     user_data = res.data[0]
                     if str(user_data.get("password")) == password_val:
                         user_state.update(user_data)
-                        page.go("/feed")
+                        # ЗАМЕНА: page.go -> page.push_route
+                        page.push_route("/feed")
                     else:
                         ps.error_text = "Неверный пароль! Попробуйте еще раз"
                         ps.border_color = ft.Colors.RED_600
@@ -194,9 +183,11 @@ def main(page: ft.Page):
                 ft.Container(height=10),
                 ft.ElevatedButton("ВОЙТИ", width=300, height=50, bgcolor=ft.Colors.RED, color="white",
                                   on_click=login_click),
-                ft.TextButton("Создать новый аккаунт", on_click=lambda _: page.go("/register"),
+                # ЗАМЕНА: page.go -> page.push_route
+                ft.TextButton("Создать новый аккаунт", on_click=lambda _: page.push_route("/register"),
                               style=ft.ButtonStyle(color="white")),
-                ft.TextButton("Забыли пароль?", on_click=lambda _: page.go("/reset_password"),
+                # ЗАМЕНА: page.go -> page.push_route
+                ft.TextButton("Забыли пароль?", on_click=lambda _: page.push_route("/reset_password"),
                               style=ft.ButtonStyle(color=ft.Colors.GREY_500))
             ], horizontal_alignment="center", bgcolor="black"))
 
@@ -214,10 +205,11 @@ def main(page: ft.Page):
                 if check and check.data:
                     upd = safe_query(
                         lambda: supabase.table("profiles").update({"password": rs_new_ps.value}).eq("username",
-                                                                                                   target_un).execute())
+                                                                                                 target_un).execute())
                     if upd:
                         show_msg("Пароль успешно изменен!", ft.Colors.GREEN_700)
-                        page.go("/")
+                        # ЗАМЕНА: page.go -> page.push_route
+                        page.push_route("/")
                 else:
                     show_msg("Пользователь не найден!", ft.Colors.RED_600)
 
@@ -231,7 +223,8 @@ def main(page: ft.Page):
                 ft.Container(height=20),
                 ft.ElevatedButton("ОБНОВИТЬ ПАРОЛЬ", width=300, height=50, bgcolor=ft.Colors.RED, color="white",
                                   on_click=reset_click),
-                ft.TextButton("Вернуться назад", on_click=lambda _: page.go("/"), style=ft.ButtonStyle(color="white"))
+                # ЗАМЕНА: page.go -> page.push_route
+                ft.TextButton("Вернуться назад", on_click=lambda _: page.push_route("/"), style=ft.ButtonStyle(color="white"))
             ], horizontal_alignment="center", bgcolor="black"))
 
         elif page.route == "/register":
@@ -277,7 +270,8 @@ def main(page: ft.Page):
                 }
                 if safe_query(lambda: supabase.table("profiles").insert(data).execute()):
                     user_state.update(data)
-                    page.go("/feed")
+                    # ЗАМЕНА: page.go -> page.push_route
+                    page.push_route("/feed")
                 else:
                     show_msg("Этот никнейм уже кем-то занят.", ft.Colors.RED_600)
 
@@ -331,8 +325,8 @@ def main(page: ft.Page):
                     {"from_email": user_state["email"], "to_email": target_email}).execute())
                 check = safe_query(
                     lambda: supabase.table("likes").select("*").eq("from_email", target_email).eq("to_email",
-                                                                                                 user_state[
-                                                                                                     "email"]).execute())
+                                                                                               user_state[
+                                                                                                   "email"]).execute())
                 if check and check.data:
                     show_msg(f"Новый мэтч с {card_res.data['first_name']}!", ft.Colors.GREEN_700)
                 load_next()
@@ -452,8 +446,9 @@ def main(page: ft.Page):
                 ft.AppBar(title=ft.Row(
                     [ft.CircleAvatar(foreground_image_src=current_chat_partner.get("avatar_url", ""), radius=15),
                      ft.Text(f" {current_chat_partner['username']}")]), bgcolor="black",
+                          # ЗАМЕНА: page.go -> page.push_route
                           leading=ft.IconButton(ft.Icons.ARROW_BACK, icon_color=ft.Colors.RED,
-                                                on_click=lambda _: page.go("/messages"))),
+                                                on_click=lambda _: page.push_route("/messages"))),
                 msg_list,
                 ft.Container(
                     ft.Row([msg_in, ft.IconButton(ft.Icons.SEND_ROUNDED, icon_color=ft.Colors.RED, on_click=send_msg)]),
@@ -473,7 +468,8 @@ def main(page: ft.Page):
                     if url:
                         user_state["avatar_url"] = url
                         show_msg("Успешно! Нажмите сохранить.", ft.Colors.GREEN_700)
-                        page.go("/profile")
+                        # ЗАМЕНА: page.go -> page.push_route
+                        page.push_route("/profile")
 
             prof_file_picker = ft.FilePicker(on_result=on_prof_file_picked)
             page.overlay.append(prof_file_picker)
@@ -501,25 +497,26 @@ def main(page: ft.Page):
                     p_un, p_fn, p_bio,
                     ft.ElevatedButton("СОХРАНИТЬ", width=300, height=50, bgcolor=ft.Colors.RED, color="white",
                                       on_click=save_profile),
-                    ft.TextButton("Выйти", style=ft.ButtonStyle(color=ft.Colors.RED), on_click=lambda _: page.go("/"))
+                    # ЗАМЕНА: page.go -> page.push_route
+                    ft.TextButton("Выйти", style=ft.ButtonStyle(color=ft.Colors.RED), on_click=lambda _: page.push_route("/"))
                 ], horizontal_alignment="center", spacing=15, scroll=ft.ScrollMode.AUTO), padding=20)
             ], bgcolor="black", horizontal_alignment="center"))
 
         page.update()
 
-    # Эти функции должны быть определены в main, но не внутри route_change
     def open_chat(u):
         current_chat_partner.update(
             {"email": u['email'], "username": u['username'], "avatar_url": u.get("avatar_url", "")})
-        page.go("/chat")
+        # ЗАМЕНА: page.go -> page.push_route
+        page.push_route("/chat")
 
     # Привязываем обработчик и запускаем
     page.on_route_change = route_change
     page.run_task(update_unread_data)
     
     # ИСПРАВЛЕНИЕ ЧЕРНОГО ЭКРАНА:
-    # Используем page.go для принудительного срабатывания route_change при старте
-    page.go("/")
+    # ЗАМЕНА: page.go -> page.push_route
+    page.push_route("/")
 
 # Запуск приложения
 if __name__ == "__main__":
