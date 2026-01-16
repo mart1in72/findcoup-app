@@ -214,7 +214,7 @@ def main(page: ft.Page):
                 if check and check.data:
                     upd = safe_query(
                         lambda: supabase.table("profiles").update({"password": rs_new_ps.value}).eq("username",
-                                                                                                    target_un).execute())
+                                                                                                   target_un).execute())
                     if upd:
                         show_msg("Пароль успешно изменен!", ft.Colors.GREEN_700)
                         page.go("/")
@@ -305,8 +305,8 @@ def main(page: ft.Page):
             def load_next(_=None):
                 target = "Девушка" if user_state["gender"] == "Парень" else "Парень"
                 res = safe_query(lambda: supabase.table("profiles").select("*").eq("gender", target).neq("username",
-                                                                                                         user_state[
-                                                                                                             "username"]).execute())
+                                                                                                        user_state[
+                                                                                                            "username"]).execute())
                 if res and res.data:
                     u = random.choice(res.data)
                     card_res.data = u
@@ -331,8 +331,8 @@ def main(page: ft.Page):
                     {"from_email": user_state["email"], "to_email": target_email}).execute())
                 check = safe_query(
                     lambda: supabase.table("likes").select("*").eq("from_email", target_email).eq("to_email",
-                                                                                                  user_state[
-                                                                                                      "email"]).execute())
+                                                                                                 user_state[
+                                                                                                     "email"]).execute())
                 if check and check.data:
                     show_msg(f"Новый мэтч с {card_res.data['first_name']}!", ft.Colors.GREEN_700)
                 load_next()
@@ -360,8 +360,8 @@ def main(page: ft.Page):
                 for item in my_likes.data:
                     mutual = safe_query(
                         lambda: supabase.table("likes").select("*").eq("from_email", item['to_email']).eq("to_email",
-                                                                                                          user_state[
-                                                                                                              "email"]).execute())
+                                                                                                         user_state[
+                                                                                                             "email"]).execute())
                     if mutual and mutual.data:
                         u_res = safe_query(lambda: supabase.table("profiles").select("*").eq("email", item[
                             'to_email']).single().execute())
@@ -517,9 +517,9 @@ def main(page: ft.Page):
     page.on_route_change = route_change
     page.run_task(update_unread_data)
     
-    # Делаем небольшую паузу для инициализации, если это Web
-    page.route = "/"
-    page.update()
+    # ИСПРАВЛЕНИЕ ЧЕРНОГО ЭКРАНА:
+    # Используем page.go для принудительного срабатывания route_change при старте
+    page.go("/")
 
 # Запуск приложения
 if __name__ == "__main__":
