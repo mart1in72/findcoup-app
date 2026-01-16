@@ -518,9 +518,9 @@ def main(page: ft.Page):
     page.run_task(update_unread_data)
     
     # Делаем небольшую паузу для инициализации, если это Web
-    page.route("/")
+    page.route = "/"
     page.update()
 
 # Запуск приложения
 if __name__ == "__main__":
-    ft.app(target=main)
+    ft.run(main)
