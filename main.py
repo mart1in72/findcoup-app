@@ -14,7 +14,7 @@ HEADERS = {
     "Prefer": "return=representation"
 }
 
-def main(page: ft.Page):
+async def main(page: ft.Page):
     # 1. Настройки страницы
     page.title = "FindCoup Web"
     page.theme_mode = ft.ThemeMode.DARK
@@ -47,24 +47,28 @@ def main(page: ft.Page):
                 return r.status_code in [200, 201]
         except: return False
 
-    async def api_patch(table, query, data):
-        try:
-            async with httpx.AsyncClient() as client:
-                await client.patch(f"{URL}/rest/v1/{table}?{query}", headers=HEADERS, json=data)
-                return True
-        except: return False
-
     def show_snack(text, color=ft.Colors.RED):
         page.snack_bar = ft.SnackBar(ft.Text(text), bgcolor=color)
         page.snack_bar.open = True
         page.update()
 
-    # --- НАВИГАЦИЯ ---
+    # --- ХЕЛПЕРЫ НАВИГАЦИИ (Вместо лямбд) ---
+    async def go_home(e): await page.push_route("/")
+    async def go_reg(e): await page.push_route("/reg")
+    async def go_matches(e): await page.push_route("/matches")
+    async def go_feed(e): await page.push_route("/feed")
+
+    # Обработчик навигационного бара
+    async def on_nav_change(e):
+        idx = e.control.selected_index
+        routes = ["/feed", "/matches", "/messages", "/profile"]
+        if idx < len(routes):
+            await page.push_route(routes[idx])
+
     def get_nav(idx):
         return ft.NavigationBar(
             selected_index=idx,
-            # Используем push_route вместо go
-            on_change=lambda e: page.push_route(["/feed", "/matches", "/messages", "/profile"][e.control.selected_index]),
+            on_change=on_nav_change, # Ссылка на асинхронную функцию
             destinations=[
                 ft.NavigationDestination(icon=ft.Icons.EXPLORE, label="Лента"),
                 ft.NavigationDestination(icon=ft.Icons.FAVORITE, label="Мэтчи"),
@@ -78,7 +82,6 @@ def main(page: ft.Page):
     # --- ЛОГИКА ЧАТА ---
     async def chat_loop(msg_list):
         while True:
-            # Проверяем флаг внутри цикла
             if state["is_chatting"]:
                 try:
                     my_email = state["user"]["email"]
@@ -88,7 +91,6 @@ def main(page: ft.Page):
                     msgs = await api_get("messages", query)
                     
                     if msgs:
-                        # Простая проверка на изменение количества, чтобы не перерисовывать лишний раз
                         if len(msg_list.controls) != len(msgs):
                             msg_list.controls.clear()
                             for m in msgs:
@@ -115,7 +117,6 @@ def main(page: ft.Page):
         state["is_chatting"] = False
         page.views.clear()
         
-        # Получаем текущий маршрут (route.route это строка пути)
         troute = page.route
         
         # 1. ВХОД
@@ -128,7 +129,6 @@ def main(page: ft.Page):
                     show_snack("Никнейм должен содержать @")
                     return
                 
-                # Показываем загрузку
                 btn_login.text = "Входим..."
                 btn_login.disabled = True
                 page.update()
@@ -137,7 +137,7 @@ def main(page: ft.Page):
                 
                 if users and str(users[0]['password']) == ps.value:
                     state["user"] = users[0]
-                    page.push_route("/feed") # Используем push_route
+                    await page.push_route("/feed") # ВАЖНО: await
                 else:
                     show_snack("Неверные данные")
                     btn_login.text = "ВОЙТИ"
@@ -152,7 +152,7 @@ def main(page: ft.Page):
                     ft.Text("FindCoup Web", size=30, weight="bold"),
                     un, ps,
                     btn_login,
-                    ft.TextButton("Регистрация", on_click=lambda _: page.push_route("/reg"))
+                    ft.TextButton("Регистрация", on_click=go_reg) # Используем функцию-обертку
                 ], horizontal_alignment="center", alignment="center")
             ], horizontal_alignment="center", vertical_alignment="center"))
 
@@ -187,7 +187,7 @@ def main(page: ft.Page):
                 success = await api_post("profiles", data)
                 if success:
                     state["user"] = data
-                    page.push_route("/feed")
+                    await page.push_route("/feed") # ВАЖНО: await
                 else:
                     show_snack("Ошибка регистрации")
 
@@ -198,7 +198,7 @@ def main(page: ft.Page):
                     ft.TextButton("Другой аватар", on_click=refresh_avatar),
                     r_un, r_ps, r_fn, r_gn,
                     ft.ElevatedButton("СОЗДАТЬ", on_click=reg_click, width=300, bgcolor="red", color="white"),
-                    ft.TextButton("Назад", on_click=lambda _: page.push_route("/"))
+                    ft.TextButton("Назад", on_click=go_home) # Используем функцию-обертку
                 ], horizontal_alignment="center", scroll=ft.ScrollMode.AUTO)
             ], horizontal_alignment="center"))
 
@@ -247,7 +247,6 @@ def main(page: ft.Page):
             ], bgcolor="black"))
             
             if not card_col.controls:
-                # Небольшая задержка перед загрузкой, чтобы интерфейс успел отрисоваться
                 await asyncio.sleep(0.1)
                 await load_next()
 
@@ -269,7 +268,7 @@ def main(page: ft.Page):
                         def open_chat_closure(clicked_user):
                             async def handler(_):
                                 state["partner"] = clicked_user
-                                page.push_route("/chat")
+                                await page.push_route("/chat") # ВАЖНО: await
                             return handler
 
                         lst.controls.append(ft.ListTile(
@@ -280,9 +279,9 @@ def main(page: ft.Page):
                         ))
             page.update()
         
-        # 5. MESSAGES (редирект на matches)
+        # 5. MESSAGES
         elif troute == "/messages":
-             page.push_route("/matches")
+             await page.push_route("/matches") # ВАЖНО: await
 
         # 6. ЧАТ
         elif troute == "/chat":
@@ -304,12 +303,11 @@ def main(page: ft.Page):
 
             page.views.append(ft.View("/chat", [
                 ft.AppBar(title=ft.Text(state["partner"].get("first_name", "Чат")), bgcolor="black", 
-                         leading=ft.IconButton(ft.Icons.ARROW_BACK, on_click=lambda _: page.push_route("/matches"))),
+                         leading=ft.IconButton(ft.Icons.ARROW_BACK, on_click=go_matches)), # Обертка
                 ft.Container(msg_list, expand=True, padding=10),
                 ft.Container(ft.Row([txt_in, ft.IconButton(ft.Icons.SEND, icon_color="red", on_click=send_click)]), padding=10)
             ], bgcolor="black"))
             
-            # Запускаем чат в фоне. create_task безопаснее в Pyodide чем page.run_task
             asyncio.create_task(chat_loop(msg_list))
 
         elif troute == "/profile":
@@ -320,7 +318,7 @@ def main(page: ft.Page):
                     ft.CircleAvatar(src=u['avatar_url'], radius=60),
                     ft.Text(u['first_name'], size=20, weight="bold"),
                     ft.Text("@" + u['username'], color="grey"),
-                    ft.TextButton("Выход", on_click=lambda _: page.push_route("/"))
+                    ft.TextButton("Выход", on_click=go_home) # Обертка
                 ], horizontal_alignment="center", spacing=20), padding=20),
                 get_nav(3)
             ], bgcolor="black"))
@@ -328,8 +326,7 @@ def main(page: ft.Page):
         page.update()
 
     page.on_route_change = route_change
-    # Стартуем с маршрута /
-    page.push_route("/")
+    # ИСПРАВЛЕНИЕ: Добавлен await для запуска
+    await page.push_route("/")
 
-# ВАЖНО: Используем web_renderer="html" для браузера, чтобы избежать сбоев
 ft.app(target=main, view=ft.AppView.WEB_BROWSER, web_renderer="html")
