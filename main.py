@@ -14,6 +14,7 @@ HEADERS = {
     "Prefer": "return=representation"
 }
 
+# Делаем main асинхронной
 async def main(page: ft.Page):
     # 1. Настройки страницы
     page.title = "FindCoup Web"
@@ -52,13 +53,14 @@ async def main(page: ft.Page):
         page.snack_bar.open = True
         page.update()
 
-    # --- ХЕЛПЕРЫ НАВИГАЦИИ (Вместо лямбд) ---
+    # --- ИСПРАВЛЕННАЯ НАВИГАЦИЯ (Async Wrappers) ---
+    # Flet в браузере требует явных асинхронных функций для событий
     async def go_home(e): await page.push_route("/")
     async def go_reg(e): await page.push_route("/reg")
     async def go_matches(e): await page.push_route("/matches")
     async def go_feed(e): await page.push_route("/feed")
 
-    # Обработчик навигационного бара
+    # Навигационный бар
     async def on_nav_change(e):
         idx = e.control.selected_index
         routes = ["/feed", "/matches", "/messages", "/profile"]
@@ -68,7 +70,7 @@ async def main(page: ft.Page):
     def get_nav(idx):
         return ft.NavigationBar(
             selected_index=idx,
-            on_change=on_nav_change, # Ссылка на асинхронную функцию
+            on_change=on_nav_change,
             destinations=[
                 ft.NavigationDestination(icon=ft.Icons.EXPLORE, label="Лента"),
                 ft.NavigationDestination(icon=ft.Icons.FAVORITE, label="Мэтчи"),
@@ -86,11 +88,13 @@ async def main(page: ft.Page):
                 try:
                     my_email = state["user"]["email"]
                     p_email = state["partner"]["email"]
+                    # Формируем запрос сообщений между двумя людьми
                     query = f"or=(and(sender_email.eq.{my_email},receiver_email.eq.{p_email}),and(sender_email.eq.{p_email},receiver_email.eq.{my_email}))&order=created_at.asc"
                     
                     msgs = await api_get("messages", query)
                     
                     if msgs:
+                        # Обновляем только если количество изменилось
                         if len(msg_list.controls) != len(msgs):
                             msg_list.controls.clear()
                             for m in msgs:
@@ -152,7 +156,7 @@ async def main(page: ft.Page):
                     ft.Text("FindCoup Web", size=30, weight="bold"),
                     un, ps,
                     btn_login,
-                    ft.TextButton("Регистрация", on_click=go_reg) # Используем функцию-обертку
+                    ft.TextButton("Регистрация", on_click=go_reg)
                 ], horizontal_alignment="center", alignment="center")
             ], horizontal_alignment="center", vertical_alignment="center"))
 
@@ -198,7 +202,7 @@ async def main(page: ft.Page):
                     ft.TextButton("Другой аватар", on_click=refresh_avatar),
                     r_un, r_ps, r_fn, r_gn,
                     ft.ElevatedButton("СОЗДАТЬ", on_click=reg_click, width=300, bgcolor="red", color="white"),
-                    ft.TextButton("Назад", on_click=go_home) # Используем функцию-обертку
+                    ft.TextButton("Назад", on_click=go_home)
                 ], horizontal_alignment="center", scroll=ft.ScrollMode.AUTO)
             ], horizontal_alignment="center"))
 
@@ -211,6 +215,7 @@ async def main(page: ft.Page):
                 if not state["feed_data"]:
                     users = await api_get("profiles", f"gender=eq.{target}&limit=20")
                     if users:
+                        # Фильтруем себя
                         state["feed_data"] = [u for u in users if u['username'] != state["user"]['username']]
                         random.shuffle(state["feed_data"])
                 
@@ -232,6 +237,7 @@ async def main(page: ft.Page):
                 if not getattr(card_col, 'data', None): return
                 target = card_col.data
                 await api_post("likes", {"from_email": state["user"]["email"], "to_email": target["email"]})
+                # Проверка взаимности
                 check = await api_get("likes", f"from_email=eq.{target['email']}&to_email=eq.{state['user']['email']}")
                 if check: show_snack(f"Мэтч с {target['first_name']}!", ft.Colors.GREEN)
                 await load_next()
@@ -265,10 +271,11 @@ async def main(page: ft.Page):
                 if mutual:
                     u = await api_get("profiles", f"email=eq.{l['from_email']}")
                     if u:
+                        # Замыкание для передачи данных в обработчик
                         def open_chat_closure(clicked_user):
                             async def handler(_):
                                 state["partner"] = clicked_user
-                                await page.push_route("/chat") # ВАЖНО: await
+                                await page.push_route("/chat")
                             return handler
 
                         lst.controls.append(ft.ListTile(
@@ -281,7 +288,7 @@ async def main(page: ft.Page):
         
         # 5. MESSAGES
         elif troute == "/messages":
-             await page.push_route("/matches") # ВАЖНО: await
+             await page.push_route("/matches")
 
         # 6. ЧАТ
         elif troute == "/chat":
@@ -303,11 +310,12 @@ async def main(page: ft.Page):
 
             page.views.append(ft.View("/chat", [
                 ft.AppBar(title=ft.Text(state["partner"].get("first_name", "Чат")), bgcolor="black", 
-                         leading=ft.IconButton(ft.Icons.ARROW_BACK, on_click=go_matches)), # Обертка
+                         leading=ft.IconButton(ft.Icons.ARROW_BACK, on_click=go_matches)),
                 ft.Container(msg_list, expand=True, padding=10),
                 ft.Container(ft.Row([txt_in, ft.IconButton(ft.Icons.SEND, icon_color="red", on_click=send_click)]), padding=10)
             ], bgcolor="black"))
             
+            # Запускаем фоновую задачу чата
             asyncio.create_task(chat_loop(msg_list))
 
         elif troute == "/profile":
@@ -318,7 +326,7 @@ async def main(page: ft.Page):
                     ft.CircleAvatar(src=u['avatar_url'], radius=60),
                     ft.Text(u['first_name'], size=20, weight="bold"),
                     ft.Text("@" + u['username'], color="grey"),
-                    ft.TextButton("Выход", on_click=go_home) # Обертка
+                    ft.TextButton("Выход", on_click=go_home)
                 ], horizontal_alignment="center", spacing=20), padding=20),
                 get_nav(3)
             ], bgcolor="black"))
@@ -326,7 +334,8 @@ async def main(page: ft.Page):
         page.update()
 
     page.on_route_change = route_change
-    # ИСПРАВЛЕНИЕ: Добавлен await для запуска
+    # Запускаем начальный маршрут с await
     await page.push_route("/")
 
+# Запуск приложения (предупреждение будет, но оно безопасно)
 ft.app(target=main, view=ft.AppView.WEB_BROWSER, web_renderer="html")
