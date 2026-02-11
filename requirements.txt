@@ -1,2 +1,4 @@
-flet
-supabase
+fastapi
+uvicorn
+httpx
+python-multipart
