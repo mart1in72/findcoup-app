@@ -1,481 +1,427 @@
 import flet as ft
-from supabase import create_client, Client
+import httpx
 import random
-import threading
+import asyncio
 import time
-import os
+import base64
 
-# --- НАСТРОЙКИ ПОДКЛЮЧЕНИЯ ---
+# --- КОНФИГУРАЦИЯ SUPABASE ---
 URL = "https://kgxvjlsojgkkhdaftncg.supabase.co"
+# Убедитесь, что этот ключ рабочий и имеет права на запись в Storage
 KEY = "sb_publishable_2jhUvmgAKa-edfQyKSWlbA_nKxG65O0"
-supabase: Client = create_client(URL, KEY)
+HEADERS = {
+    "apikey": KEY,
+    "Authorization": f"Bearer {KEY}",
+    "Prefer": "return=representation"
+}
 
 
-def main(page: ft.Page):
-    page.title = "FindCoup v5.2 Platinum"
+async def main(page: ft.Page):
+    # Настройки страницы
+    page.title = "FindCoup Web"
     page.theme_mode = ft.ThemeMode.DARK
     page.bgcolor = ft.Colors.BLACK
-    page.window_width = 400
-    page.window_height = 800
+    page.padding = 0  # Убираем отступы для фуллскрина
 
-    # Глобальное состояние пользователя
-    user_state = {
-        "email": "", "gender": "", "username": "",
-        "first_name": "", "grade": "", "bio": "", "avatar_url": ""
+    # Глобальное состояние
+    state = {
+        "user": {},
+        "partner": {},
+        "is_chatting": False,
+        "feed_data": [],
+        "upload_file_name": None,
+        "upload_file_bytes": None,
+        "current_tab": 0  # Для навигации
     }
 
-    current_chat_partner = {"email": "", "username": ""}
-    chat_active = False
-    reg_temp_avatar_url = ""
+    # --- ИНИЦИАЛИЗАЦИЯ FILE PICKER (ВАЖНО: В САМОМ НАЧАЛЕ) ---
+    async def on_file_picked(e: ft.FilePickerResultEvent):
+        if e.files and len(e.files) > 0:
+            file_obj = e.files[0]
+            if file_obj.content:  # Для веба контент приходит в base64
+                try:
+                    # data:image/jpeg;base64,/9j/4AAQ... -> берем часть после запятой
+                    b64_str = file_obj.content.split(",")[1]
+                    state["upload_file_bytes"] = base64.b64decode(b64_str)
+                    state["upload_file_name"] = file_obj.name
 
-    # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
-    def show_msg(text, color=ft.Colors.RED_600):
-        page.snack_bar = ft.SnackBar(ft.Text(text, color="white"), bgcolor=color)
-        page.snack_bar.open = True
-        page.update()
+                    # Обновляем превью
+                    if img_preview:
+                        img_preview.src_base64 = b64_str
+                        img_preview.src = ""
+                        btn_upload.text = "Фото выбрано!"
+                        btn_upload.icon = ft.Icons.CHECK
+                        await page.update_async()
+                except Exception as err:
+                    print(f"Ошибка чтения файла: {err}")
 
-    def safe_query(func):
+    file_picker = ft.FilePicker(on_result=on_file_picked)
+    page.overlay.append(file_picker)  # Добавляем в оверлей сразу
+
+    # --- API ФУНКЦИИ ---
+    async def api_get(table, params=""):
         try:
-            return func()
+            headers = HEADERS.copy()
+            headers["Content-Type"] = "application/json"
+            async with httpx.AsyncClient() as client:
+                r = await client.get(f"{URL}/rest/v1/{table}?{params}", headers=headers)
+                if r.status_code == 200: return r.json()
         except Exception as e:
-            print(f"Error: {e}")
-            return None
+            print(f"GET Error: {e}")
+        return []
 
-    # --- ЗАГРУЗКА ФОТО В STORAGE ---
-    def upload_image_to_supabase(file_path, username_prefix="user"):
+    async def api_post_json(table, data):
         try:
-            file_name = f"{username_prefix}_{int(time.time())}.png"
-            with open(file_path, "rb") as f:
-                file_data = f.read()
-                supabase.storage.from_("avatars").upload(file_name, file_data)
-            public_url = supabase.storage.from_("avatars").get_public_url(file_name)
-            return public_url
+            headers = HEADERS.copy()
+            headers["Content-Type"] = "application/json"
+            async with httpx.AsyncClient() as client:
+                r = await client.post(f"{URL}/rest/v1/{table}", headers=headers, json=data)
+                return r.status_code in [200, 201]
+        except:
+            return False
+
+    # Функция для обновления статуса сообщений (Прочитано)
+    async def api_mark_read(sender, receiver):
+        try:
+            headers = HEADERS.copy()
+            headers["Content-Type"] = "application/json"
+            # PATCH запрос: обновить is_read=True где отправитель=ОН и получатель=Я
+            query = f"sender_email=eq.{sender}&receiver_email=eq.{receiver}&is_read=eq.false"
+            async with httpx.AsyncClient() as client:
+                await client.patch(f"{URL}/rest/v1/messages?{query}", headers=headers, json={"is_read": True})
+        except:
+            pass
+
+    async def api_upload_file(bucket, filename, file_bytes):
+        try:
+            upload_url = f"{URL}/storage/v1/object/{bucket}/{filename}"
+            headers = HEADERS.copy()
+            # Определяем тип (упрощенно)
+            ctype = "image/png" if filename.endswith(".png") else "image/jpeg"
+            headers["Content-Type"] = ctype
+            if "Prefer" in headers: del headers["Prefer"]
+
+            async with httpx.AsyncClient() as client:
+                r = await client.post(upload_url, headers=headers, content=file_bytes)
+                if r.status_code == 200:
+                    return f"{URL}/storage/v1/object/public/{bucket}/{filename}"
         except Exception as e:
             print(f"Upload Error: {e}")
-            show_msg(f"Ошибка загрузки: {e}")
-            return None
+        return None
 
-    # --- СЧЕТЧИКИ СООБЩЕНИЙ ---
-    def get_unread_total():
-        if not user_state["email"]: return 0
-        res = safe_query(
-            lambda: supabase.table("messages").select("id", count="exact").eq("receiver_email", user_state["email"]).eq(
-                "is_read", False).execute())
-        return res.count if res else 0
-
-    def get_unread_for_user(sender_email):
-        res = safe_query(
-            lambda: supabase.table("messages").select("id", count="exact").eq("receiver_email", user_state["email"]).eq(
-                "sender_email", sender_email).eq("is_read", False).execute())
-        return res.count if res else 0
-
-    def mark_as_read(sender_email):
-        safe_query(
-            lambda: supabase.table("messages").update({"is_read": True}).eq("receiver_email", user_state["email"]).eq(
-                "sender_email", sender_email).eq("is_read", False).execute())
+    async def show_snack(text, color=ft.Colors.RED):
+        page.snack_bar = ft.SnackBar(ft.Text(text), bgcolor=color)
+        page.snack_bar.open = True
+        await page.update_async()
 
     # --- НАВИГАЦИЯ ---
+    async def on_nav_change(e):
+        idx = e.control.selected_index
+        # 0: Feed, 1: Matches, 2: Chats, 3: Profile
+        routes = ["/feed", "/matches", "/chats_list", "/profile"]
+        if idx < len(routes):
+            # Если уходим из чата, останавливаем обновление
+            state["is_chatting"] = False
+            await page.push_route_async(routes[idx])
+
     def get_nav(idx):
-        unread = get_unread_total()
-        chat_label = f"Чаты ({unread})" if unread > 0 else "Чаты"
-        return ft.Tabs(
+        return ft.NavigationBar(
             selected_index=idx,
-            on_change=lambda e: page.go(["/feed", "/matches", "/messages", "/profile"][e.control.selected_index]),
-            divider_color=ft.Colors.GREY_900,
-            indicator_color=ft.Colors.RED,
-            label_color=ft.Colors.RED,
-            unselected_label_color=ft.Colors.GREY_400,
-            tabs=[
-                ft.Tab(text="Лента", icon=ft.Icons.EXPLORE),
-                ft.Tab(text="Мэтчи", icon=ft.Icons.FAVORITE),
-                ft.Tab(text=chat_label, icon=ft.Icons.CHAT_BUBBLE),
-                ft.Tab(text="Профиль", icon=ft.Icons.PERSON),
-            ]
+            on_change=on_nav_change,
+            destinations=[
+                ft.NavigationDestination(icon=ft.Icons.EXPLORE, label="Лента"),
+                ft.NavigationDestination(icon=ft.Icons.FAVORITE, label="Мэтчи"),
+                ft.NavigationDestination(icon=ft.Icons.CHAT_BUBBLE, label="Чаты"),  # Новая вкладка
+                ft.NavigationDestination(icon=ft.Icons.PERSON, label="Профиль"),
+            ],
+            bgcolor=ft.Colors.BLACK,
+            indicator_color=ft.Colors.RED_900
         )
 
-    # ================= РОУТИНГ =================
-    def route_change(route):
-        nonlocal chat_active, reg_temp_avatar_url
-        chat_active = False
-        page.overlay.clear()
+    # --- ФОНОВАЯ ЗАДАЧА ЧАТА ---
+    async def chat_loop(msg_list):
+        while state["is_chatting"]:
+            try:
+                my_email = state["user"]["email"]
+                p_email = state["partner"]["email"]
+                query = f"or=(and(sender_email.eq.{my_email},receiver_email.eq.{p_email}),and(sender_email.eq.{p_email},receiver_email.eq.{my_email}))&order=created_at.asc"
+
+                msgs = await api_get("messages", query)
+                if msgs and len(msg_list.controls) != len(msgs):
+                    msg_list.controls.clear()
+                    for m in msgs:
+                        is_me = m['sender_email'] == my_email
+                        # Сообщение
+                        msg_bubble = ft.Container(
+                            content=ft.Text(m['text'], color="white"),
+                            bgcolor=ft.Colors.RED_900 if is_me else ft.Colors.GREY_900,
+                            padding=10, border_radius=10,
+                            width=250 if len(m['text']) > 30 else None
+                        )
+                        msg_list.controls.append(
+                            ft.Row([msg_bubble],
+                                   alignment=ft.MainAxisAlignment.END if is_me else ft.MainAxisAlignment.START)
+                        )
+                    await page.update_async()
+            except:
+                pass
+            await asyncio.sleep(2)
+
+    # --- ROUTING ---
+    async def route_change(route):
+        state["is_chatting"] = False
         page.views.clear()
+        troute = page.route
 
-        # 1. ЭКРАН ВХОДА
-        if page.route == "/":
-            un = ft.TextField(label="Никнейм (с @)", width=300, border_color=ft.Colors.GREY_800, border_radius=10)
-            ps = ft.TextField(label="Пароль", password=True, width=300, border_color=ft.Colors.GREY_800,
-                              border_radius=10)
+        # 1. ВХОД
+        if troute == "/":
+            un = ft.TextField(label="Никнейм (@)", width=300)
+            ps = ft.TextField(label="Пароль", password=True, width=300)
 
-            def login_click(_):
-                username_val = un.value.strip()
-                password_val = ps.value.strip()
-
-                # Сброс стилей перед проверкой
-                un.error_text = None
-                ps.error_text = None
-                un.border_color = ft.Colors.GREY_800
-                ps.border_color = ft.Colors.GREY_800
-
-                if "@" not in username_val:
-                    un.error_text = "Email введён некорректно, добавьте @"
-                    show_msg("Ошибка в формате никнейма", ft.Colors.RED_600)
-                    page.update()
-                    return
-
-                res = safe_query(lambda: supabase.table("profiles").select("*").eq("username", username_val).execute())
-
-                if res and res.data:
-                    user_data = res.data[0]
-                    # СТРОГАЯ ПРОВЕРКА ПАРОЛЯ
-                    if str(user_data.get("password")) == password_val:
-                        user_state.update(user_data)
-                        page.go("/feed")
-                    else:
-                        # ВЫВОД КРАСНОЙ ОШИБКИ ПРИ НЕВЕРНОМ ПАРОЛЕ
-                        ps.error_text = "Неверный пароль! Попробуйте еще раз"
-                        ps.border_color = ft.Colors.RED_600
-                        show_msg("Ошибка доступа: неверный пароль", ft.Colors.RED_600)
-                        page.update()
+            async def login_click(e):
+                if not un.value: return
+                users = await api_get("profiles", f"username=eq.{un.value}")
+                if users and str(users[0]['password']) == ps.value:
+                    state["user"] = users[0]
+                    await page.push_route_async("/feed")
                 else:
-                    un.error_text = "Пользователь не зарегистрирован"
-                    un.border_color = ft.Colors.RED_600
-                    show_msg("Никнейм не найден в базе данных", ft.Colors.RED_600)
-                    page.update()
+                    await show_snack("Ошибка входа")
 
             page.views.append(ft.View("/", [
-                ft.Container(height=80),
-                ft.Icon(ft.Icons.FAVORITE, color=ft.Colors.RED, size=100),
-                ft.Text("FindCoup", size=35, weight="bold", color="white"),
-                ft.Text("Найди себе пару на школьный бал", color=ft.Colors.GREY_500),
-                ft.Container(height=20),
-                un, ps,
-                ft.Container(height=10),
-                ft.ElevatedButton("ВОЙТИ", width=300, height=50, bgcolor=ft.Colors.RED, color="white",
-                                  on_click=login_click),
-                ft.TextButton("Создать новый аккаунт", on_click=lambda _: page.go("/register"),
-                              style=ft.ButtonStyle(color="white")),
-                ft.TextButton("Забыли пароль?", on_click=lambda _: page.go("/reset_password"),
-                              style=ft.ButtonStyle(color=ft.Colors.GREY_500))
-            ], horizontal_alignment="center", bgcolor="black"))
-
-        # --- НОВЫЙ ЭКРАН: СБРОС ПАРОЛЯ ---
-        elif page.route == "/reset_password":
-            rs_un = ft.TextField(label="Ваш Никнейм (с @)", width=300, border_color=ft.Colors.GREY_800)
-            rs_new_ps = ft.TextField(label="Новый пароль", password=True, width=300, border_color=ft.Colors.GREY_800)
-
-            def reset_click(_):
-                target_un = rs_un.value.strip()
-                if not target_un or not rs_new_ps.value:
-                    show_msg("Заполните все поля!", ft.Colors.RED_600)
-                    return
-                check = safe_query(
-                    lambda: supabase.table("profiles").select("username").eq("username", target_un).execute())
-                if check and check.data:
-                    upd = safe_query(
-                        lambda: supabase.table("profiles").update({"password": rs_new_ps.value}).eq("username",
-                                                                                                    target_un).execute())
-                    if upd:
-                        show_msg("Пароль успешно изменен!", ft.Colors.GREEN_700)
-                        page.go("/")
-                else:
-                    show_msg("Пользователь не найден!", ft.Colors.RED_600)
-
-            page.views.append(ft.View("/reset_password", [
-                ft.AppBar(title=ft.Text("Восстановление доступа"), bgcolor="black", color="white"),
-                ft.Container(height=40),
-                ft.Text("Введите никнейм и новый пароль", color="white", size=16),
-                ft.Container(height=20),
-                rs_un,
-                rs_new_ps,
-                ft.Container(height=20),
-                ft.ElevatedButton("ОБНОВИТЬ ПАРОЛЬ", width=300, height=50, bgcolor=ft.Colors.RED, color="white",
-                                  on_click=reset_click),
-                ft.TextButton("Вернуться назад", on_click=lambda _: page.go("/"), style=ft.ButtonStyle(color="white"))
-            ], horizontal_alignment="center", bgcolor="black"))
-
-        # 2. ЭКРАН РЕГИСТРАЦИИ
-        elif page.route == "/register":
-            reg_temp_avatar_url = ""
-            r_fn = ft.TextField(label="Ваше Имя", width=300, border_color=ft.Colors.GREY_800)
-            r_un = ft.TextField(label="Никнейм (обязательно с @)", width=300, border_color=ft.Colors.GREY_800)
-            r_ps = ft.TextField(label="Придумайте Пароль", password=True, width=300, border_color=ft.Colors.GREY_800)
-            r_gn = ft.Dropdown(label="Ваш Пол", width=300, border_color=ft.Colors.GREY_800,
-                               options=[ft.dropdown.Option("Парень"), ft.dropdown.Option("Девушка")])
-            r_bio = ft.TextField(label="О себе коротко", width=300, multiline=True, max_lines=3,
-                                 border_color=ft.Colors.GREY_800)
-            avatar_preview = ft.CircleAvatar(radius=50, bgcolor=ft.Colors.GREY_900,
-                                             content=ft.Icon(ft.Icons.PERSON, size=40))
-
-            def on_reg_file_picked(e: ft.FilePickerResultEvent):
-                nonlocal reg_temp_avatar_url
-                if e.files:
-                    show_msg("Загружаем ваше фото...", ft.Colors.BLUE_700)
-                    url = upload_image_to_supabase(e.files[0].path, "reg_user")
-                    if url:
-                        reg_temp_avatar_url = url
-                        avatar_preview.foreground_image_src = url
-                        avatar_preview.content = None
-                        show_msg("Фотография успешно сохранена!", ft.Colors.GREEN_700)
-                        page.update()
-
-            reg_file_picker = ft.FilePicker(on_result=on_reg_file_picked)
-            page.overlay.append(reg_file_picker)
-
-            def register_click(_):
-                new_username = r_un.value.strip()
-                if "@" not in new_username:
-                    show_msg("Email введён некорректно, добавьте пожалуйста знак @", ft.Colors.RED_600)
-                    return
-                if not r_un.value or not r_ps.value or not r_fn.value or not reg_temp_avatar_url:
-                    show_msg("Заполните профиль и добавьте фото!", ft.Colors.RED_600)
-                    return
-                fake_email = f"{new_username.replace('@', '')}@findcoup.local"
-                data = {
-                    "email": fake_email, "password": r_ps.value, "first_name": r_fn.value,
-                    "username": new_username, "gender": r_gn.value, "bio": r_bio.value,
-                    "avatar_url": reg_temp_avatar_url, "grade": "Школьник"
-                }
-                if safe_query(lambda: supabase.table("profiles").insert(data).execute()):
-                    user_state.update(data)
-                    page.go("/feed")
-                else:
-                    show_msg("Этот никнейм уже кем-то занят.", ft.Colors.RED_600)
-
-            page.views.append(ft.View("/register", [
-                ft.AppBar(title=ft.Text("Регистрация в FindCoup"), color="white", bgcolor="black"),
                 ft.Column([
-                    ft.Container(height=10),
-                    ft.Stack([
-                        avatar_preview,
-                        ft.IconButton(ft.Icons.ADD_A_PHOTO, bgcolor=ft.Colors.RED, icon_color="white", top=65, right=-5,
-                                      on_click=lambda _: reg_file_picker.pick_files(
-                                          file_type=ft.FilePickerFileType.IMAGE))
-                    ], width=110, height=110),
-                    ft.Text("Нажмите для выбора аватара", color=ft.Colors.GREY_500, size=12),
-                    r_fn, r_un, r_ps, r_gn, r_bio,
-                    ft.ElevatedButton("ЗАРЕГИСТРИРОВАТЬСЯ", width=300, height=50, bgcolor=ft.Colors.RED, color="white",
-                                      on_click=register_click),
-                    ft.Container(height=20)
-                ], horizontal_alignment="center", scroll=ft.ScrollMode.AUTO, spacing=15)
-            ], bgcolor="black", horizontal_alignment="center"))
+                    ft.Icon(ft.Icons.FAVORITE, color="red", size=80),
+                    ft.Text("FindCoup", size=32, weight="bold"),
+                    un, ps,
+                    ft.ElevatedButton("ВОЙТИ", on_click=login_click, width=300, bgcolor="red", color="white"),
+                    ft.TextButton("Регистрация", on_click=lambda _: page.push_route_async("/reg"))
+                ], horizontal_alignment="center", alignment="center")
+            ], horizontal_alignment="center", vertical_alignment="center"))
 
-        # 3. ЭКРАН ЛЕНТЫ
-        elif page.route == "/feed":
-            card_res = ft.Column(horizontal_alignment="center", spacing=15)
+        # 2. РЕГИСТРАЦИЯ (ИСПРАВЛЕНО)
+        elif troute == "/reg":
+            state["upload_file_bytes"] = None  # Сброс
 
-            def load_next(_=None):
-                target = "Девушка" if user_state["gender"] == "Парень" else "Парень"
-                res = safe_query(lambda: supabase.table("profiles").select("*").eq("gender", target).neq("username",
-                                                                                                         user_state[
-                                                                                                             "username"]).execute())
-                if res and res.data:
-                    u = random.choice(res.data)
-                    card_res.data = u
-                    card_res.controls = [
-                        ft.Container(
-                            ft.Image(src=u.get("avatar_url") or "https://via.placeholder.com/400", fit="cover"),
-                            border_radius=25, height=450, width=350, border=ft.border.all(1, ft.Colors.GREY_900)),
-                        ft.Text(f"{u['first_name']}, {u.get('grade', '')}", size=26, weight="bold", color="white"),
-                        ft.Text(u.get("bio", "Нет описания"), italic=True, text_align="center", width=300,
-                                color=ft.Colors.GREY_400),
-                        ft.Text(f"{u['username']}", color=ft.Colors.RED, size=16, weight="bold")
-                    ]
+            # Глобальные переменные для доступа из on_file_picked
+            global img_preview, btn_upload
+
+            r_un = ft.TextField(label="Никнейм (без @)", width=300)
+            r_ps = ft.TextField(label="Пароль", password=True, width=300)
+            r_fn = ft.TextField(label="Имя", width=300)
+            r_gn = ft.Dropdown(label="Пол", width=300,
+                               options=[ft.dropdown.Option("Парень"), ft.dropdown.Option("Девушка")])
+
+            img_preview = ft.Image(src=f"https://api.dicebear.com/9.x/avataaars/svg?seed={random.randint(0, 1000)}",
+                                   width=100, height=100, border_radius=50)
+
+            # Кнопка вызывает pick_files_async
+            async def upload_click(e):
+                await file_picker.pick_files_async(allow_multiple=False, file_type=ft.FilePickerFileType.IMAGE)
+
+            btn_upload = ft.ElevatedButton("Загрузить фото", icon=ft.Icons.UPLOAD, on_click=upload_click, width=300)
+
+            async def reg_submit(e):
+                if not r_un.value: return
+
+                avatar_url = img_preview.src
+                # Если файл выбран, загружаем
+                if state["upload_file_bytes"]:
+                    fname = f"{r_un.value}_{int(time.time())}.jpg"
+                    res_url = await api_upload_file("avatars", fname, state["upload_file_bytes"])
+                    if res_url: avatar_url = res_url
+
+                data = {
+                    "username": r_un.value, "password": r_ps.value, "first_name": r_fn.value,
+                    "gender": r_gn.value, "email": f"{r_un.value}@local.test", "avatar_url": avatar_url
+                }
+
+                if await api_post_json("profiles", data):
+                    state["user"] = data
+                    await page.push_route_async("/feed")
                 else:
-                    card_res.controls = [
-                        ft.Container(ft.Text("Анкеты закончились! Зайдите позже.", color="white", size=18), padding=50)]
-                page.update()
+                    await show_snack("Ошибка регистрации")
 
-            def match_click(_):
-                if not card_res.data: return
-                target_email = card_res.data['email']
-                safe_query(lambda: supabase.table("likes").insert(
-                    {"from_email": user_state["email"], "to_email": target_email}).execute())
-                check = safe_query(
-                    lambda: supabase.table("likes").select("*").eq("from_email", target_email).eq("to_email",
-                                                                                                  user_state[
-                                                                                                      "email"]).execute())
-                if check and check.data:
-                    show_msg(f"Новый мэтч с {card_res.data['first_name']}!", ft.Colors.GREEN_700)
-                load_next()
+            page.views.append(ft.View("/reg", [
+                ft.AppBar(title=ft.Text("Новый аккаунт"), bgcolor="black"),
+                ft.Column([
+                    ft.Container(img_preview, padding=10),
+                    btn_upload,  # Кнопка теперь точно здесь
+                    r_un, r_ps, r_fn, r_gn,
+                    ft.ElevatedButton("ГОТОВО", on_click=reg_submit, width=300, bgcolor="red", color="white")
+                ], horizontal_alignment="center", scroll=ft.ScrollMode.AUTO)
+            ], horizontal_alignment="center"))
+
+        # 3. ЛЕНТА
+        elif troute == "/feed":
+            card_col = ft.Column(horizontal_alignment="center")
+
+            async def load_card():
+                # Простая логика загрузки
+                target = "Девушка" if state["user"]["gender"] == "Парень" else "Парень"
+                users = await api_get("profiles", f"gender=eq.{target}&limit=30")
+                if users:
+                    # Убираем себя и перемешиваем
+                    valid = [u for u in users if u['username'] != state["user"]['username']]
+                    if valid:
+                        u = random.choice(valid)  # Берем случайного
+                        card_col.data = u
+                        card_col.controls = [
+                            ft.Container(ft.Image(src=u['avatar_url'], width=300, height=400, fit=ft.ImageFit.COVER,
+                                                  border_radius=20)),
+                            ft.Text(f"{u['first_name']}, {u['username']}", size=24, weight="bold")
+                        ]
+                    else:
+                        card_col.controls = [ft.Text("Никого нет :(")]
+                await page.update_async()
+
+            async def do_like(e):
+                if not card_col.data: return
+                target = card_col.data
+                await api_post_json("likes", {"from_email": state["user"]["email"], "to_email": target["email"]})
+                # Проверка мэтча
+                check = await api_get("likes", f"from_email=eq.{target['email']}&to_email=eq.{state['user']['email']}")
+                if check: await show_snack("Это МЭТЧ!", ft.Colors.GREEN)
+                await load_card()
 
             page.views.append(ft.View("/feed", [
-                ft.AppBar(title=ft.Text("Лента FindCoup", color=ft.Colors.RED, weight="bold"), bgcolor="black",
-                          automatically_imply_leading=False),
-                get_nav(0),
-                ft.Container(card_res, padding=10, alignment=ft.alignment.center),
+                ft.AppBar(title=ft.Text("FindCoup"), automatically_imply_leading=False, bgcolor="black"),
+                ft.Container(card_col, expand=True, alignment=ft.alignment.center),
                 ft.Row([
-                    ft.IconButton(ft.Icons.CLOSE_ROUNDED, icon_size=45, icon_color="white", bgcolor=ft.Colors.GREY_900,
-                                  on_click=load_next),
-                    ft.Container(width=30),
-                    ft.IconButton(ft.Icons.FAVORITE_ROUNDED, icon_size=55, icon_color="white", bgcolor=ft.Colors.RED,
-                                  on_click=match_click)
-                ], alignment="center")
-            ], bgcolor="black", horizontal_alignment="center"))
-            load_next()
+                    ft.IconButton(ft.Icons.CLOSE, icon_size=40, on_click=lambda _: asyncio.create_task(load_card())),
+                    ft.IconButton(ft.Icons.FAVORITE, icon_size=40, icon_color="red", on_click=do_like)
+                ], alignment="center"),
+                get_nav(0)
+            ], bgcolor="black"))
+            asyncio.create_task(load_card())
 
-        # 4. ЭКРАН МЭТЧЕЙ
-        elif page.route == "/matches":
-            match_list = ft.ListView(expand=True, spacing=10, padding=10)
-            my_likes = safe_query(
-                lambda: supabase.table("likes").select("to_email").eq("from_email", user_state["email"]).execute())
-            if my_likes and my_likes.data:
-                for item in my_likes.data:
-                    mutual = safe_query(
-                        lambda: supabase.table("likes").select("*").eq("from_email", item['to_email']).eq("to_email",
-                                                                                                          user_state[
-                                                                                                              "email"]).execute())
-                    if mutual and mutual.data:
-                        u_res = safe_query(lambda: supabase.table("profiles").select("*").eq("email", item[
-                            'to_email']).single().execute())
-                        if u_res:
-                            u = u_res.data
-                            match_list.controls.append(ft.ListTile(
-                                leading=ft.CircleAvatar(foreground_image_src=u.get("avatar_url") or ""),
-                                title=ft.Text(u['first_name'], color="white", weight="bold"),
-                                subtitle=ft.Text(f"{u['username']}", color="grey"),
-                                trailing=ft.IconButton(ft.Icons.CHAT_ROUNDED, icon_color=ft.Colors.RED,
-                                                       on_click=lambda _, user=u: open_chat(user))
-                            ))
+        # 4. МЭТЧИ (Просто список лиц)
+        elif troute == "/matches":
+            grid = ft.GridView(expand=True, runs_count=2, max_extent=150, spacing=10, run_spacing=10)
+
+            my_likes = await api_get("likes", f"from_email=eq.{state['user']['email']}")
+            for l in my_likes:
+                mutual = await api_get("likes", f"from_email=eq.{l['to_email']}&to_email=eq.{state['user']['email']}")
+                if mutual:
+                    u_list = await api_get("profiles", f"email=eq.{l['to_email']}")
+                    if u_list:
+                        u = u_list[0]
+
+                        async def to_chat(e, user=u):
+                            state["partner"] = user
+                            # При входе помечаем прочитанным
+                            await api_mark_read(user['email'], state["user"]["email"])
+                            await page.push_route_async("/chat")
+
+                        grid.controls.append(ft.Container(
+                            content=ft.Column([
+                                ft.CircleAvatar(src=u['avatar_url'], radius=40),
+                                ft.Text(u['first_name'], weight="bold")
+                            ], horizontal_alignment="center"),
+                            bgcolor=ft.Colors.GREY_900, border_radius=10, padding=10,
+                            on_click=to_chat
+                        ))
+
             page.views.append(ft.View("/matches", [
-                ft.AppBar(title=ft.Text("Ваши мэтчи", color="white"), bgcolor="black",
-                          automatically_imply_leading=False),
-                get_nav(1),
-                match_list
+                ft.AppBar(title=ft.Text("Ваши пары"), automatically_imply_leading=False, bgcolor="black"),
+                ft.Container(grid, expand=True, padding=10),
+                get_nav(1)
             ], bgcolor="black"))
+            await page.update_async()
 
-        # 5. ЭКРАН СПИСКА ЧАТОВ
-        elif page.route == "/messages":
-            chats_list = ft.ListView(expand=True)
-            msgs = safe_query(lambda: supabase.table("messages").select("sender_email, receiver_email").or_(
-                f"sender_email.eq.{user_state['email']},receiver_email.eq.{user_state['email']}").execute())
-            partners = {m['receiver_email'] if m['sender_email'] == user_state['email'] else m['sender_email'] for m in
-                        msgs.data} if msgs else set()
-            for p_email in partners:
-                p_res = safe_query(
-                    lambda: supabase.table("profiles").select("*").eq("email", p_email).single().execute())
-                if p_res:
-                    u = p_res.data
-                    cnt = get_unread_for_user(p_email)
-                    badge = ft.Container(content=ft.Text(str(cnt), size=10, weight="bold", color="white"),
-                                         bgcolor=ft.Colors.RED, padding=5, border_radius=10, visible=cnt > 0)
-                    chats_list.controls.append(ft.ListTile(
-                        leading=ft.CircleAvatar(foreground_image_src=u.get("avatar_url") or ""),
-                        title=ft.Text(u['first_name'], color="white"),
-                        trailing=badge,
-                        on_click=lambda _, user=u: open_chat(user)
-                    ))
-            page.views.append(ft.View("/messages", [
-                ft.AppBar(title=ft.Text("Мессенджер", color="white"), bgcolor="black",
-                          automatically_imply_leading=False),
-                get_nav(2),
-                chats_list
+        # 5. СПИСОК ЧАТОВ (НОВАЯ ВКЛАДКА)
+        elif troute == "/chats_list":
+            lv = ft.ListView(expand=True)
+
+            # Получаем список тех, с кем есть мэтч
+            my_likes = await api_get("likes", f"from_email=eq.{state['user']['email']}")
+            matches = []
+
+            # Собираем пользователей
+            for l in my_likes:
+                mutual = await api_get("likes", f"from_email=eq.{l['to_email']}&to_email=eq.{state['user']['email']}")
+                if mutual:
+                    u_list = await api_get("profiles", f"email=eq.{l['to_email']}")
+                    if u_list: matches.append(u_list[0])
+
+            # Для каждого мэтча считаем непрочитанные
+            for m in matches:
+                # Получаем все непрочитанные сообщения от этого пользователя ко мне
+                unread_msgs = await api_get("messages",
+                                            f"sender_email=eq.{m['email']}&receiver_email=eq.{state['user']['email']}&is_read=eq.false")
+                count = len(unread_msgs) if unread_msgs else 0
+
+                trailing = None
+                if count > 0:
+                    trailing = ft.Container(
+                        content=ft.Text(str(count), color="white", size=12),
+                        bgcolor="red", border_radius=10, padding=5, width=25, height=25, alignment=ft.alignment.center
+                    )
+
+                async def open_chat_wrapper(e, user=m):
+                    state["partner"] = user
+                    # Сразу помечаем прочитанным
+                    await api_mark_read(user['email'], state["user"]["email"])
+                    await page.push_route_async("/chat")
+
+                lv.controls.append(ft.ListTile(
+                    leading=ft.CircleAvatar(src=m['avatar_url']),
+                    title=ft.Text(m['first_name']),
+                    subtitle=ft.Text("Нажмите, чтобы открыть чат"),
+                    trailing=trailing,
+                    on_click=open_chat_wrapper
+                ))
+
+            if not matches:
+                lv.controls.append(ft.Text("У вас пока нет активных пар", text_align="center"))
+
+            page.views.append(ft.View("/chats_list", [
+                ft.AppBar(title=ft.Text("Сообщения"), automatically_imply_leading=False, bgcolor="black"),
+                lv,
+                get_nav(2)
             ], bgcolor="black"))
+            await page.update_async()
 
-        # 6. ЭКРАН ПЕРЕПИСКИ
-        elif page.route == "/chat":
-            chat_active = True
-            msg_list = ft.ListView(expand=True, spacing=10, padding=10, auto_scroll=True)
-            msg_in = ft.TextField(hint_text="Сообщение...", expand=True, border_color=ft.Colors.GREY_800, color="white",
-                                  on_submit=lambda _: send_msg(None))
+        # 6. ЧАТ
+        elif troute == "/chat":
+            state["is_chatting"] = True
+            msgs = ft.ListView(expand=True, spacing=10, padding=10)
+            tf = ft.TextField(hint_text="...", expand=True, border_radius=20)
 
-            def send_msg(_):
-                if msg_in.value:
-                    safe_query(lambda: supabase.table("messages").insert(
-                        {"sender_email": user_state["email"], "receiver_email": current_chat_partner["email"],
-                         "text": msg_in.value, "is_read": False}).execute())
-                    msg_in.value = ""
-                    page.update()
-                    refresh_chat()
+            async def send_click(e):
+                if not tf.value: return
+                await api_post_json("messages", {
+                    "sender_email": state["user"]["email"],
+                    "receiver_email": state["partner"]["email"],
+                    "text": tf.value,
+                    "is_read": False
+                })
+                tf.value = ""
+                await page.update_async()
 
-            def refresh_chat():
-                if not chat_active: return
-                mark_as_read(current_chat_partner["email"])
-                res = safe_query(lambda: supabase.table("messages").select("*").or_(
-                    f"and(sender_email.eq.{user_state['email']},receiver_email.eq.{current_chat_partner['email']}),and(sender_email.eq.{current_chat_partner['email']},receiver_email.eq.{user_state['email']})").order(
-                    "created_at").execute())
-                if res and res.data:
-                    msg_list.controls = [ft.Row(
-                        [ft.Container(content=ft.Text(m['text'], color="white"),
-                                      bgcolor=ft.Colors.RED if m['sender_email'] == user_state[
-                                          'email'] else ft.Colors.GREY_900, padding=12, border_radius=15)],
-                        alignment=ft.MainAxisAlignment.END if m['sender_email'] == user_state[
-                            'email'] else ft.MainAxisAlignment.START
-                    ) for m in res.data]
-                    try:
-                        page.update()
-                    except:
-                        pass
-
-            threading.Thread(target=lambda: (time.sleep(2), refresh_chat() if chat_active else None),
-                             daemon=True).start()
-            refresh_chat()
             page.views.append(ft.View("/chat", [
-                ft.AppBar(title=ft.Row(
-                    [ft.CircleAvatar(foreground_image_src=current_chat_partner.get("avatar_url", ""), radius=15),
-                     ft.Text(f" {current_chat_partner['username']}")]), bgcolor="black",
-                          leading=ft.IconButton(ft.Icons.ARROW_BACK, icon_color=ft.Colors.RED,
-                                                on_click=lambda _: page.go("/messages"))),
-                msg_list,
-                ft.Container(
-                    ft.Row([msg_in, ft.IconButton(ft.Icons.SEND_ROUNDED, icon_color=ft.Colors.RED, on_click=send_msg)]),
-                    padding=15)
+                ft.AppBar(title=ft.Text(state["partner"]["first_name"]), bgcolor="black"),
+                msgs,
+                ft.Container(ft.Row([tf, ft.IconButton(ft.Icons.SEND, on_click=send_click)]), padding=10)
             ], bgcolor="black"))
+            asyncio.create_task(chat_loop(msgs))
 
-        # 7. ЭКРАН ПРОФИЛЯ
-        elif page.route == "/profile":
-            p_un = ft.TextField(label="Никнейм", value=user_state["username"], border_color=ft.Colors.GREY_800)
-            p_fn = ft.TextField(label="Имя", value=user_state["first_name"], border_color=ft.Colors.GREY_800)
-            p_bio = ft.TextField(label="Описание", value=user_state.get("bio", ""), multiline=True,
-                                 border_color=ft.Colors.GREY_800)
-
-            def on_prof_file_picked(e: ft.FilePickerResultEvent):
-                if e.files:
-                    show_msg("Обновляем аватар...", ft.Colors.BLUE_700)
-                    url = upload_image_to_supabase(e.files[0].path, f"upd_{user_state['username']}")
-                    if url:
-                        user_state["avatar_url"] = url
-                        show_msg("Успешно! Нажмите сохранить.", ft.Colors.GREEN_700)
-                        page.go("/profile")
-
-            prof_file_picker = ft.FilePicker(on_result=on_prof_file_picked)
-            page.overlay.append(prof_file_picker)
-
-            def save_profile(_):
-                data = {"username": p_un.value, "first_name": p_fn.value, "bio": p_bio.value,
-                        "avatar_url": user_state["avatar_url"]}
-                if safe_query(lambda: supabase.table("profiles").update(data).eq("username",
-                                                                                 user_state["username"]).execute()):
-                    user_state.update(data)
-                    show_msg("Профиль обновлен!", ft.Colors.GREEN_700)
-
+        # 7. ПРОФИЛЬ
+        elif troute == "/profile":
+            u = state["user"]
             page.views.append(ft.View("/profile", [
-                ft.AppBar(title=ft.Text("Мой Профиль", color="white"), bgcolor="black",
-                          automatically_imply_leading=False),
-                get_nav(3),
-                ft.Container(ft.Column([
-                    ft.Stack([ft.CircleAvatar(foreground_image_src=user_state["avatar_url"], radius=70),
-                              ft.IconButton(ft.Icons.EDIT, bgcolor=ft.Colors.RED, icon_color="white", top=100, right=0,
-                                            on_click=lambda _: prof_file_picker.pick_files(
-                                                file_type=ft.FilePickerFileType.IMAGE))]),
-                    ft.TextButton("Обновить фото", icon=ft.Icons.UPLOAD, icon_color=ft.Colors.RED,
-                                  style=ft.ButtonStyle(color="white"), on_click=lambda _: prof_file_picker.pick_files(
-                            file_type=ft.FilePickerFileType.IMAGE)),
-                    p_un, p_fn, p_bio,
-                    ft.ElevatedButton("СОХРАНИТЬ", width=300, height=50, bgcolor=ft.Colors.RED, color="white",
-                                      on_click=save_profile),
-                    ft.TextButton("Выйти", style=ft.ButtonStyle(color=ft.Colors.RED), on_click=lambda _: page.go("/"))
-                ], horizontal_alignment="center", spacing=15, scroll=ft.ScrollMode.AUTO), padding=20)
+                ft.AppBar(title=ft.Text("Профиль"), automatically_imply_leading=False, bgcolor="black"),
+                ft.Column([
+                    ft.CircleAvatar(src=u['avatar_url'], radius=60),
+                    ft.Text(u['first_name'], size=24),
+                    ft.Text("@" + u['username'], color="grey"),
+                    ft.ElevatedButton("Выйти", on_click=lambda _: page.push_route_async("/"), color="red")
+                ], horizontal_alignment="center"),
+                get_nav(3)
             ], bgcolor="black", horizontal_alignment="center"))
 
-        page.update()
-
-    def open_chat(u):
-        current_chat_partner.update(
-            {"email": u['email'], "username": u['username'], "avatar_url": u.get("avatar_url", "")})
-        page.go("/chat")
+        await page.update_async()
 
     page.on_route_change = route_change
-    page.go("/")
+    await page.push_route_async("/")
 
 
 ft.app(target=main, view=ft.AppView.WEB_BROWSER)
