@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>FindCoup </title>
+    <title>FindCoup v4.0</title>
     <style>
         /* === СТИЛИ === */
         :root { --primary: #ff4757; --bg: #000000; --card: #1e272e; --text: #ffffff; }
@@ -23,6 +23,9 @@
         button.outline { background: transparent; border: 2px solid var(--primary); color: var(--primary); }
         button.sm { width: auto; padding: 8px 16px; margin: 0; font-size: 14px; }
         button.danger { background: transparent; border: 1px solid #ff4757; color: #ff4757; margin-top: 20px; }
+
+        /* Ошибки */
+        .error-msg { color: #ff4757; text-align: center; font-size: 14px; margin-bottom: 10px; min-height: 20px; }
 
         /* Аватар */
         .avatar-box { text-align: center; margin: 15px 0; }
@@ -57,8 +60,18 @@
 
         /* Навигация */
         .nav { position: absolute; bottom: 0; width: 100%; height: 60px; background: #151515; display: flex; justify-content: space-around; align-items: center; border-top: 1px solid #333; }
-        .nav-btn { font-size: 22px; opacity: 0.5; cursor: pointer; }
+        .nav-btn { font-size: 22px; opacity: 0.5; cursor: pointer; position: relative; }
         .nav-btn.active { opacity: 1; color: var(--primary); }
+
+        /* Счетчик на кнопке навигации */
+        .nav-badge {
+            position: absolute; top: -5px; right: -5px;
+            background: red; color: white; border-radius: 50%;
+            width: 16px; height: 16px; font-size: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: bold; border: 2px solid #151515;
+            display: none; /* Скрыт по умолчанию */
+        }
     </style>
 </head>
 <body>
@@ -66,11 +79,13 @@
 <div class="app">
     <div id="scr-auth" class="screen active" style="text-align: center; padding-top: 40px;">
         <h1 style="color:var(--primary)">FindCoup</h1>
+
         <div id="auth-forms">
             <input type="text" id="l_u" placeholder="Логин">
             <input type="password" id="l_p" placeholder="Пароль">
-            <button onclick="login()">Войти</button>
-            <p onclick="toggleReg()" style="color:#777; cursor:pointer">Создать аккаунт</p>
+            <div id="login-err" class="error-msg"></div> <button onclick="login()">Войти</button>
+            <p onclick="toggleReg()" style="color:#777; cursor:pointer; font-size:14px;">Создать аккаунт</p>
+            <p onclick="toggleReset()" style="color:#777; cursor:pointer; font-size:14px;">Забыли пароль?</p>
         </div>
 
         <div id="reg-forms" style="display:none">
@@ -83,16 +98,30 @@
             <input type="text" id="r_u" placeholder="Логин (уникальный)">
             <input type="password" id="r_p" placeholder="Пароль">
             <input type="text" id="r_n" placeholder="Отображаемое имя">
-            <textarea id="r_bio" placeholder="О себе (пару слов)" rows="3"></textarea> <select id="r_g"><option value="Парень">Я Парень</option><option value="Девушка">Я Девушка</option></select>
+            <input type="text" id="r_key" placeholder="Секретное слово (для восстановления)" style="border: 1px solid var(--primary)">
+            <textarea id="r_bio" placeholder="О себе" rows="2"></textarea>
+            <select id="r_g"><option value="Парень">Я Парень</option><option value="Девушка">Я Девушка</option></select>
+            <div id="reg-err" class="error-msg"></div>
             <button onclick="register()">Регистрация</button>
             <button class="outline" onclick="toggleReg()">Назад</button>
+        </div>
+
+        <div id="reset-forms" style="display:none">
+            <h3>Сброс пароля</h3>
+            <p style="font-size:12px; color:#aaa">Введите логин и секретное слово, которое указывали при регистрации.</p>
+            <input type="text" id="res_u" placeholder="Логин">
+            <input type="text" id="res_key" placeholder="Секретное слово">
+            <input type="password" id="res_new_p" placeholder="Новый пароль">
+            <div id="reset-err" class="error-msg"></div>
+            <button onclick="doReset()">Сменить пароль</button>
+            <button class="outline" onclick="toggleReset()">Отмена</button>
         </div>
     </div>
 
     <div id="scr-feed" class="screen">
         <div id="feed-area">Loading...</div>
         <div style="display:flex; justify-content:space-evenly; margin-top:15px;">
-            <button class="outline" style="width:45%" onclick="nextCard()">Скип</button>
+            <button class="outline" style="width:45%" onclick="nextCard()">Дальше</button>
             <button style="width:45%" onclick="doLike()">Лайк</button>
         </div>
     </div>
@@ -112,7 +141,6 @@
             <img id="p_img" class="avatar-preview" style="width:130px; height:130px;">
             <h2 id="p_name" style="margin-bottom: 5px;">Name</h2>
             <div id="p_bio" style="color: #aaa; margin: 10px 0; font-style: italic; white-space: pre-wrap;"></div>
-
             <button class="outline" onclick="openEdit()">✎ Редактировать профиль</button>
             <button class="danger" onclick="location.reload()">Выйти</button>
         </div>
@@ -130,7 +158,6 @@
         <input type="text" id="e_n">
         <label style="font-size:12px; color:#777; margin-left:5px;">О себе</label>
         <textarea id="e_bio" rows="4"></textarea>
-
         <button onclick="saveProfile()">Сохранить изменения</button>
         <button class="outline" onclick="go('scr-profile')">Отмена</button>
     </div>
@@ -150,7 +177,8 @@
     <div id="nav" class="nav" style="display:none">
         <div class="nav-btn active" onclick="go('scr-feed', this)">🏠</div>
         <div class="nav-btn" onclick="go('scr-matches', this)">❤️</div>
-        <div class="nav-btn" onclick="go('scr-chats', this)">💬</div>
+        <div class="nav-btn" onclick="go('scr-chats', this)">
+            💬 <div id="nav-msg-badge" class="nav-badge">0</div> </div>
         <div class="nav-btn" onclick="go('scr-profile', this)">👤</div>
     </div>
 </div>
@@ -162,17 +190,16 @@
     let FEED = [];
     let CURR = null;
     let CHAT_USER = null;
-    // Временные переменные для хранения URL аватара при загрузке
     let TEMP_AVATAR = "https://via.placeholder.com/150";
     let EDIT_AVATAR_URL = "";
     let POLLING = false;
+    let UNREAD_INTERVAL = null; // Для глобальной проверки уведомлений
 
     // --- NAV ---
     function go(id, btn) {
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
         document.getElementById(id).classList.add('active');
 
-        // Показываем навигацию везде кроме входа и редактирования
         const showNav = ['scr-feed', 'scr-matches', 'scr-chats', 'scr-profile'].includes(id);
         document.getElementById('nav').style.display = showNav ? 'flex' : 'none';
 
@@ -188,11 +215,29 @@
     }
 
     function toggleReg() {
-        const r = document.getElementById('reg-forms');
-        const l = document.getElementById('auth-forms');
-        if(r.style.display === 'none') { r.style.display='block'; l.style.display='none'; }
-        else { r.style.display='none'; l.style.display='block'; }
+        hideAllAuth();
+        document.getElementById('reg-forms').style.display = 'block';
     }
+    function toggleReset() {
+        hideAllAuth();
+        document.getElementById('reset-forms').style.display = 'block';
+    }
+    function hideAllAuth() {
+        document.getElementById('auth-forms').style.display = 'none';
+        document.getElementById('reg-forms').style.display = 'none';
+        document.getElementById('reset-forms').style.display = 'none';
+        // Очистка ошибок
+        document.querySelectorAll('.error-msg').forEach(e => e.innerText = '');
+    }
+    // Вернуться к логину
+    document.querySelectorAll('.outline').forEach(b => {
+        if(b.innerText === 'Назад' || b.innerText === 'Отмена') {
+           b.onclick = () => {
+               hideAllAuth();
+               document.getElementById('auth-forms').style.display = 'block';
+           };
+        }
+    });
 
     // --- API ---
     async function req(ep, method="GET", data=null) {
@@ -200,16 +245,22 @@
             const opts = { method, headers: {'Content-Type': 'application/json'} };
             if(data) opts.body = JSON.stringify(data);
             const r = await fetch(ep, opts);
-            if(!r.ok) throw new Error("Err");
-            return await r.json();
-        } catch(e) { console.error(e); return null; }
+            const json = await r.json();
+
+            if(!r.ok) {
+                // Если ошибка, выбрасываем её с текстом от сервера
+                throw new Error(json.detail || "Ошибка сервера");
+            }
+            return json;
+        } catch(e) {
+            console.error(e);
+            return { error: true, msg: e.message };
+        }
     }
 
-    // Универсальная загрузка фото (для регистрации и для редактирования)
     async function upload(inp, imgId) {
         const fd = new FormData();
         fd.append("file", inp.files[0]);
-        // Превью сразу
         const reader = new FileReader();
         reader.onload = e => document.getElementById(imgId).src = e.target.result;
         reader.readAsDataURL(inp.files[0]);
@@ -217,9 +268,7 @@
         const r = await fetch("/upload", {method:"POST", body:fd});
         if(r.ok) {
             const d = await r.json();
-            // Если это регистрация
             if(imgId === 'r_img') TEMP_AVATAR = d.url;
-            // Если это редактирование
             if(imgId === 'e_img') EDIT_AVATAR_URL = d.url;
         }
     }
@@ -228,26 +277,83 @@
     async function login() {
         const u = document.getElementById('l_u').value;
         const p = document.getElementById('l_p').value;
+        const errBox = document.getElementById('login-err');
+
+        errBox.innerText = ""; // Сброс
         const res = await req(`/login`, "POST", {username:u, password:p});
-        if(res) { ME = res; go('scr-feed'); }
-        else alert("Ошибка входа");
+
+        if(res.error) {
+            errBox.innerText = res.msg; // Показываем ошибку в UI
+        } else {
+            ME = res;
+            startUnreadPoller(); // Запускаем проверку уведомлений
+            go('scr-feed');
+        }
     }
 
     async function register() {
         const u = document.getElementById('r_u').value;
         const p = document.getElementById('r_p').value;
         const n = document.getElementById('r_n').value;
-        const b = document.getElementById('r_bio').value; // Описание
+        const b = document.getElementById('r_bio').value;
+        const k = document.getElementById('r_key').value;
         const g = document.getElementById('r_g').value;
+        const errBox = document.getElementById('reg-err');
+
+        if(!k) { errBox.innerText = "Придумайте секретное слово!"; return; }
 
         const res = await req(`/register`, "POST", {
-            username:u, password:p, first_name:n, gender:g, bio:b, avatar_url:TEMP_AVATAR
+            username:u, password:p, first_name:n, gender:g, bio:b, avatar_url:TEMP_AVATAR, secret_key: k
         });
-        if(res) { ME = res; go('scr-feed'); }
-        else alert("Ошибка. Возможно логин занят.");
+
+        if(res.error) {
+            errBox.innerText = res.msg;
+        } else {
+            ME = res;
+            startUnreadPoller();
+            go('scr-feed');
+        }
     }
 
-    // --- ПРОФИЛЬ И РЕДАКТИРОВАНИЕ ---
+    async function doReset() {
+        const u = document.getElementById('res_u').value;
+        const k = document.getElementById('res_key').value;
+        const np = document.getElementById('res_new_p').value;
+        const errBox = document.getElementById('reset-err');
+
+        const res = await req("/reset_password", "POST", {username:u, secret_key:k, new_password:np});
+
+        if(res.error) {
+            errBox.innerText = res.msg;
+        } else {
+            alert("Пароль успешно изменен! Войдите с новым паролем.");
+            hideAllAuth();
+            document.getElementById('auth-forms').style.display = 'block';
+        }
+    }
+
+    // --- УВЕДОМЛЕНИЯ (BADGE) ---
+    function startUnreadPoller() {
+        if(UNREAD_INTERVAL) clearInterval(UNREAD_INTERVAL);
+        pollUnread(); // Сразу проверить
+        UNREAD_INTERVAL = setInterval(pollUnread, 3000); // Каждые 3 сек
+    }
+
+    async function pollUnread() {
+        if(!ME) return;
+        // Запрашиваем только кол-во (легкий запрос)
+        const res = await req(`/check_unread?email=${ME.email}`);
+        const badge = document.getElementById('nav-msg-badge');
+
+        if(res && res.count > 0) {
+            badge.style.display = 'flex';
+            badge.innerText = res.count > 9 ? '9+' : res.count;
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+
+    // --- ОСТАЛЬНАЯ ЛОГИКА (БЕЗ ИЗМЕНЕНИЙ) ---
     function renderProfile() {
         document.getElementById('p_img').src = ME.avatar_url;
         document.getElementById('p_name').innerText = ME.first_name;
@@ -258,38 +364,25 @@
         document.getElementById('e_n').value = ME.first_name;
         document.getElementById('e_bio').value = ME.bio || "";
         document.getElementById('e_img').src = ME.avatar_url;
-        EDIT_AVATAR_URL = ME.avatar_url; // Изначально равна текущей
+        EDIT_AVATAR_URL = ME.avatar_url;
         go('scr-edit');
     }
 
     async function saveProfile() {
-        const newName = document.getElementById('e_n').value;
-        const newBio = document.getElementById('e_bio').value;
-
-        // Отправляем запрос на обновление
         const res = await req("/update_profile", "PATCH", {
-            username: ME.username, // Логин нужен для поиска
-            first_name: newName,
-            bio: newBio,
-            avatar_url: EDIT_AVATAR_URL
+            username: ME.username, first_name: document.getElementById('e_n').value,
+            bio: document.getElementById('e_bio').value, avatar_url: EDIT_AVATAR_URL
         });
-
-        if(res) {
-            // Обновляем локальные данные
-            ME.first_name = res.first_name;
-            ME.bio = res.bio;
-            ME.avatar_url = res.avatar_url;
-            go('scr-profile'); // Возвращаемся в профиль
-        } else {
-            alert("Ошибка сохранения");
+        if(!res.error) {
+            ME.first_name = res.first_name; ME.bio = res.bio; ME.avatar_url = res.avatar_url;
+            go('scr-profile');
         }
     }
 
-    // --- FEED ---
     async function loadFeed() {
         if(FEED.length) return;
         const res = await req(`/feed?gender=${ME.gender}&my_username=${ME.username}`);
-        FEED = res || [];
+        FEED = res.error ? [] : res;
         nextCard();
     }
     function nextCard() {
@@ -311,13 +404,12 @@
         nextCard();
     }
 
-    // --- CHATS & MATCHES ---
     async function loadMatches() {
-        const list = await req(`/matches?email=${ME.email}`) || [];
+        const list = await req(`/matches?email=${ME.email}`);
         const grid = document.getElementById('matches-grid');
         grid.innerHTML = "";
-        if(!list.length) grid.innerHTML = "<p>Нет пар</p>";
-        list.forEach(u => {
+        if(!list || !list.length) grid.innerHTML = "<p>Нет пар</p>";
+        else list.forEach(u => {
             const div = document.createElement('div');
             div.className = 'match-card';
             div.innerHTML = `<img src="${u.avatar_url}"><b>${u.first_name}</b><button class="match-btn" onclick='openChat(${JSON.stringify(u)})'>Написать</button>`;
@@ -326,20 +418,21 @@
     }
 
     async function loadChats() {
-        const list = await req(`/chats_list?email=${ME.email}`) || [];
+        const list = await req(`/chats_list?email=${ME.email}`);
         const cont = document.getElementById('chats-list');
         cont.innerHTML = "";
-        list.forEach(u => {
-            const b = u.unread_count > 0 ? `<div class="badge">${u.unread_count}</div>` : "";
-            const div = document.createElement('div');
-            div.className = 'chat-row';
-            div.innerHTML = `<img src="${u.avatar_url}"> <div><b>${u.first_name}</b></div> ${b}`;
-            div.onclick = () => openChat(u);
-            cont.appendChild(div);
-        });
+        if(list && !list.error) {
+            list.forEach(u => {
+                const b = u.unread_count > 0 ? `<div class="badge">${u.unread_count}</div>` : "";
+                const div = document.createElement('div');
+                div.className = 'chat-row';
+                div.innerHTML = `<img src="${u.avatar_url}"> <div><b>${u.first_name}</b></div> ${b}`;
+                div.onclick = () => openChat(u);
+                cont.appendChild(div);
+            });
+        }
     }
 
-    // --- MESSAGING ---
     function openChat(user) {
         CHAT_USER = user;
         document.getElementById('c_title').innerText = user.first_name;
@@ -353,13 +446,14 @@
         POLLING = false;
         CHAT_USER = null;
         go('scr-chats');
+        pollUnread(); // Обновить бейдж сразу
     }
 
     async function pollChat() {
         if(!POLLING || !CHAT_USER) return;
         const msgs = await req(`/chat?u1=${ME.email}&u2=${CHAT_USER.email}`);
         const box = document.getElementById('c_box');
-        if(msgs && box.childElementCount !== msgs.length) {
+        if(msgs && !msgs.error && box.childElementCount !== msgs.length) {
             box.innerHTML = msgs.map(m => `<div class="msg ${m.sender_email === ME.email ? 'me' : 'him'}">${m.text}</div>`).join('');
             box.scrollTop = box.scrollHeight;
         }
