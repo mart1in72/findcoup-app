@@ -7,7 +7,7 @@ import httpx
 import os
 import time
 
-# --- ГЛОБАЛЬНЫЙ КЛИЕНТ (УСКОРЕНИЕ) ---
+# --- ГЛОБАЛЬНЫЙ КЛИЕНТ ---
 http_client = None
 
 
@@ -29,17 +29,15 @@ app.add_middleware(
 )
 
 
-# --- ГЛАВНАЯ СТРАНИЦА ---
 @app.get("/")
 async def read_root():
-    if os.path.exists("index.html"):
-        return FileResponse("index.html")
-    return {"error": "index.html не найден"}
+    if os.path.exists("index.html"): return FileResponse("index.html")
+    return {"error": "index.html not found"}
 
 
 # --- CONFIG ---
-URL = "https://kgxvjlsojgkkhdaftncg.supabase.co"
-KEY = "sb_publishable_2jhUvmgAKa-edfQyKSWlbA_nKxG65O0"
+URL = "https://kgxvjlsojgkkhdaftncg.supabase.co"  # <-- ВАШ URL
+KEY = "sb_publishable_2jhUvmgAKa-edfQyKSWlbA_nKxG65O0"  # <-- ВАШ KEY
 HEADERS = {
     "apikey": KEY,
     "Authorization": f"Bearer {KEY}",
@@ -58,16 +56,22 @@ class RegData(BaseModel):
     password: str
     first_name: str
     gender: str
-    bio: str  # <-- Добавлено описание при регистрации
+    bio: str
     avatar_url: str
+    secret_key: str  # <-- НОВОЕ ПОЛЕ
 
 
-# Модель для обновления профиля
+class ResetData(BaseModel):
+    username: str
+    secret_key: str
+    new_password: str
+
+
 class UpdateData(BaseModel):
-    username: str  # Используем логин как ID для поиска
-    first_name: str  # Новое имя
-    bio: str  # Новое описание
-    avatar_url: str  # Новое фото
+    username: str
+    first_name: str
+    bio: str
+    avatar_url: str
 
 
 class LikeData(BaseModel):
@@ -102,6 +106,7 @@ async def sb_request(method, endpoint, data=None):
 
 
 # --- ENDPOINTS ---
+
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
     content = await file.read()
@@ -109,7 +114,6 @@ async def upload_file(file: UploadFile = File(...)):
     upload_url = f"{URL}/storage/v1/object/avatars/{filename}"
     headers = HEADERS.copy()
     headers["Content-Type"] = file.content_type
-
     async with httpx.AsyncClient() as client:
         r = await client.post(upload_url, headers=headers, content=content)
         if r.status_code == 200:
@@ -122,29 +126,46 @@ async def register(data: RegData):
     payload = data.dict()
     payload["email"] = f"{data.username}@local.test"
     if await sb_request("POST", "profiles", payload): return payload
-    raise HTTPException(status_code=400, detail="Error")
+    raise HTTPException(status_code=400, detail="Registration failed")
 
 
 @app.post("/login")
 async def login(data: LoginData):
+    # Ищем пользователя
     users = await sb_request("GET", f"profiles?username=eq.{data.username}")
-    if users and str(users[0]['password']) == data.password: return users[0]
-    raise HTTPException(status_code=400, detail="Error")
+    if not users:
+        raise HTTPException(status_code=400, detail="Пользователь не найден")
+
+    if str(users[0]['password']) != data.password:
+        raise HTTPException(status_code=400, detail="Неверный пароль")
+
+    return users[0]
 
 
-# --- НОВЫЙ ENDPOINT: ОБНОВЛЕНИЕ ПРОФИЛЯ ---
+# --- НОВОЕ: СБРОС ПАРОЛЯ ---
+@app.post("/reset_password")
+async def reset_password(data: ResetData):
+    # 1. Проверяем, совпадает ли секретное слово
+    users = await sb_request("GET", f"profiles?username=eq.{data.username}")
+    if not users:
+        raise HTTPException(status_code=400, detail="Пользователь не найден")
+
+    user = users[0]
+    # Если secret_key в базе пустой или не совпадает
+    if not user.get('secret_key') or user['secret_key'] != data.secret_key:
+        raise HTTPException(status_code=400, detail="Неверное секретное слово")
+
+    # 2. Меняем пароль
+    success = await sb_request("PATCH", f"profiles?username=eq.{data.username}", {"password": data.new_password})
+    if success:
+        return {"status": "ok"}
+    raise HTTPException(status_code=400, detail="Ошибка обновления")
+
+
 @app.patch("/update_profile")
 async def update_profile(data: UpdateData):
-    # Обновляем поля по username
-    payload = {
-        "first_name": data.first_name,
-        "bio": data.bio,
-        "avatar_url": data.avatar_url
-    }
-    # Supabase query: UPDATE profiles SET ... WHERE username = ...
-    success = await sb_request("PATCH", f"profiles?username=eq.{data.username}", payload)
-    if success:
-        return payload  # Возвращаем обновленные данные
+    payload = {"first_name": data.first_name, "bio": data.bio, "avatar_url": data.avatar_url}
+    if await sb_request("PATCH", f"profiles?username=eq.{data.username}", payload): return payload
     raise HTTPException(status_code=400, detail="Update failed")
 
 
@@ -182,6 +203,14 @@ async def get_chats_list(email: str):
                                   f"messages?sender_email=eq.{m['email']}&receiver_email=eq.{email}&is_read=eq.false")
         m["unread_count"] = len(unread) if unread else 0
     return matches
+
+
+# --- НОВОЕ: БЫСТРАЯ ПРОВЕРКА ВСЕХ НЕПРОЧИТАННЫХ ---
+@app.get("/check_unread")
+async def check_unread(email: str):
+    # Считаем все сообщения, где получатель = Я и is_read = false
+    msgs = await sb_request("GET", f"messages?receiver_email=eq.{email}&is_read=eq.false")
+    return {"count": len(msgs) if msgs else 0}
 
 
 @app.get("/chat")
