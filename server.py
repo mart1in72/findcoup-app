@@ -36,8 +36,8 @@ async def read_root():
 
 
 # --- CONFIG ---
-URL = "https://kgxvjlsojgkkhdaftncg.supabase.co"  # <-- ВАШ URL
-KEY = "sb_publishable_2jhUvmgAKa-edfQyKSWlbA_nKxG65O0"  # <-- ВАШ KEY
+URL = "https://kgxvjlsojgkkhdaftncg.supabase.co"
+KEY = "sb_publishable_2jhUvmgAKa-edfQyKSWlbA_nKxG65O0"
 HEADERS = {
     "apikey": KEY,
     "Authorization": f"Bearer {KEY}",
@@ -58,7 +58,7 @@ class RegData(BaseModel):
     gender: str
     bio: str
     avatar_url: str
-    secret_key: str  # <-- НОВОЕ ПОЛЕ
+    secret_key: str
 
 
 class ResetData(BaseModel):
@@ -85,6 +85,11 @@ class MessageData(BaseModel):
     text: str
 
 
+class AdminDecision(BaseModel):
+    target_username: str
+    action: str  # "approve" или "reject"
+
+
 # --- API HELPERS ---
 async def sb_request(method, endpoint, data=None):
     headers = HEADERS.copy()
@@ -97,9 +102,11 @@ async def sb_request(method, endpoint, data=None):
             r = await http_client.post(url, headers=headers, json=data)
         elif method == "PATCH":
             r = await http_client.patch(url, headers=headers, json=data)
+        elif method == "DELETE":
+            r = await http_client.delete(url, headers=headers)  # Добавили DELETE
 
         if r.status_code in [200, 201, 204]:
-            return r.json() if method != "PATCH" else True
+            return r.json() if method != "PATCH" and method != "DELETE" else True
     except Exception as e:
         print(f"Error: {e}")
     return None
@@ -125,40 +132,71 @@ async def upload_file(file: UploadFile = File(...)):
 async def register(data: RegData):
     payload = data.dict()
     payload["email"] = f"{data.username}@local.test"
+
+    # ЛОГИКА ОДОБРЕНИЯ:
+    # Если регистрируется 'admin' - одобряем сразу.
+    # Остальные - is_approved = False
+    if data.username.lower() == "admin":
+        payload["is_approved"] = True
+    else:
+        payload["is_approved"] = False
+
     if await sb_request("POST", "profiles", payload): return payload
     raise HTTPException(status_code=400, detail="Registration failed")
 
 
 @app.post("/login")
 async def login(data: LoginData):
-    # Ищем пользователя
     users = await sb_request("GET", f"profiles?username=eq.{data.username}")
-    if not users:
-        raise HTTPException(status_code=400, detail="Пользователь не найден")
-
-    if str(users[0]['password']) != data.password:
-        raise HTTPException(status_code=400, detail="Неверный пароль")
-
-    return users[0]
-
-
-# --- НОВОЕ: СБРОС ПАРОЛЯ ---
-@app.post("/reset_password")
-async def reset_password(data: ResetData):
-    # 1. Проверяем, совпадает ли секретное слово
-    users = await sb_request("GET", f"profiles?username=eq.{data.username}")
-    if not users:
-        raise HTTPException(status_code=400, detail="Пользователь не найден")
+    if not users: raise HTTPException(status_code=400, detail="Пользователь не найден")
 
     user = users[0]
-    # Если secret_key в базе пустой или не совпадает
+
+    # Проверка пароля
+    if str(user['password']) != data.password:
+        raise HTTPException(status_code=400, detail="Неверный пароль")
+
+    # Проверка одобрения (Админа пускаем всегда)
+    if user['username'] != 'admin' and user.get('is_approved') is False:
+        raise HTTPException(status_code=403, detail="Ваш аккаунт ожидает подтверждения администратора")
+
+    return user
+
+
+# --- НОВЫЕ АДМИНСКИЕ РУЧКИ ---
+
+@app.get("/admin/pending")
+async def get_pending_users():
+    # Получить всех, у кого is_approved = false
+    return await sb_request("GET", "profiles?is_approved=is.false&order=created_at.desc") or []
+
+
+@app.post("/admin/decision")
+async def admin_decision(data: AdminDecision):
+    if data.action == "approve":
+        # Ставим галочку is_approved = true
+        success = await sb_request("PATCH", f"profiles?username=eq.{data.target_username}", {"is_approved": True})
+        if success: return {"status": "approved"}
+
+    elif data.action == "reject":
+        # Удаляем пользователя из базы
+        success = await sb_request("DELETE", f"profiles?username=eq.{data.target_username}")
+        if success: return {"status": "rejected"}
+
+    raise HTTPException(status_code=400, detail="Action failed")
+
+
+# --- ОСТАЛЬНЫЕ РУЧКИ (БЕЗ ИЗМЕНЕНИЙ) ---
+
+@app.post("/reset_password")
+async def reset_password(data: ResetData):
+    users = await sb_request("GET", f"profiles?username=eq.{data.username}")
+    if not users: raise HTTPException(status_code=400, detail="Пользователь не найден")
+    user = users[0]
     if not user.get('secret_key') or user['secret_key'] != data.secret_key:
         raise HTTPException(status_code=400, detail="Неверное секретное слово")
-
-    # 2. Меняем пароль
     success = await sb_request("PATCH", f"profiles?username=eq.{data.username}", {"password": data.new_password})
-    if success:
-        return {"status": "ok"}
+    if success: return {"status": "ok"}
     raise HTTPException(status_code=400, detail="Ошибка обновления")
 
 
@@ -172,7 +210,8 @@ async def update_profile(data: UpdateData):
 @app.get("/feed")
 async def get_feed(gender: str, my_username: str):
     target = "Девушка" if gender == "Парень" else "Парень"
-    users = await sb_request("GET", f"profiles?gender=eq.{target}&limit=50")
+    # Показываем в ленте только ОДОБРЕННЫХ пользователей
+    users = await sb_request("GET", f"profiles?gender=eq.{target}&is_approved=is.true&limit=50")
     if users: return [u for u in users if u['username'] != my_username]
     return []
 
@@ -205,12 +244,17 @@ async def get_chats_list(email: str):
     return matches
 
 
-# --- НОВОЕ: БЫСТРАЯ ПРОВЕРКА ВСЕХ НЕПРОЧИТАННЫХ ---
 @app.get("/check_unread")
 async def check_unread(email: str):
-    # Считаем все сообщения, где получатель = Я и is_read = false
-    msgs = await sb_request("GET", f"messages?receiver_email=eq.{email}&is_read=eq.false")
-    return {"count": len(msgs) if msgs else 0}
+    msgs = await sb_request("GET", f"messages?receiver_email=eq.{email}&is_read=eq.false&order=created_at.desc")
+    if not msgs: return {"count": 0, "latest": None}
+    last_msg = msgs[0]
+    sender_profile = await sb_request("GET", f"profiles?email=eq.{last_msg['sender_email']}")
+    sender_name = sender_profile[0]['first_name'] if sender_profile else "Кто-то"
+    return {
+        "count": len(msgs),
+        "latest": {"id": last_msg['id'], "text": last_msg['text'], "sender": sender_name}
+    }
 
 
 @app.get("/chat")
