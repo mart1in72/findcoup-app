@@ -220,16 +220,33 @@
     });
 
     // --- API ---
-    async function req(ep, method="GET", data=null) {
-        try {
-            const opts = { method, headers: {'Content-Type': 'application/json'} };
-            if(data) opts.body = JSON.stringify(data);
-            const r = await fetch(ep, opts);
-            const json = await r.json();
-            if(!r.ok) throw new Error(json.detail || "Ошибка");
-            return json;
-        } catch(e) { return { error: true, msg: e.message }; }
+    // Укажите здесь адрес, на котором запущен ваш Python (server.py)
+// Обычно это http://127.0.0.1:8000 или http://localhost:8000
+const API_URL = "http://127.0.0.1:8000";
+
+async function req(ep, method="GET", data=null) {
+    try {
+        // Теперь мы всегда добавляем адрес сервера перед эндпоинтом
+        const url = API_URL + ep;
+
+        const opts = {
+            method,
+            headers: { 'Content-Type': 'application/json' }
+        };
+        if(data) opts.body = JSON.stringify(data);
+
+        console.log(`Sending ${method} to ${url}`); // Отладка в консоли
+
+        const r = await fetch(url, opts);
+        const json = await r.json();
+
+        if(!r.ok) throw new Error(json.detail || "Ошибка сервера");
+        return json;
+    } catch(e) {
+        console.error("Ошибка запроса:", e);
+        return { error: true, msg: e.message };
     }
+}
     async function upload(inp, imgId) {
         const fd = new FormData();
         fd.append("file", inp.files[0]);
