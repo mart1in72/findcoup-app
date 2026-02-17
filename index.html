@@ -3,18 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>FindCoup v7.0</title>
+    <title>FindCoup v5.0 (Notifications)</title>
     <style>
-        /* === СТИЛИ (CSS) === */
+        /* === СТИЛИ === */
         :root { --primary: #ff4757; --bg: #000000; --card: #1e272e; --text: #ffffff; }
         body { background: var(--bg); color: var(--text); font-family: -apple-system, sans-serif; margin: 0; height: 100vh; overflow: hidden; display: flex; justify-content: center; }
         .app { width: 100%; max-width: 480px; height: 100%; position: relative; display: flex; flex-direction: column; background: #111; }
 
+        /* Экраны */
         .screen { display: none; flex: 1; overflow-y: auto; padding: 20px; padding-bottom: 80px; }
         .screen.active { display: block; animation: fadeIn 0.3s; }
         @keyframes fadeIn { from {opacity:0} to {opacity:1} }
         
-        h1, h2, h3 { margin-top: 0; text-align: center; }
+        /* UI Элементы */
+        h2 { margin-top: 0; text-align: center; }
         input, textarea, select { width: 100%; padding: 14px; margin: 8px 0; background: #2f3542; border: none; border-radius: 12px; color: white; box-sizing: border-box; font-size: 16px; font-family: inherit; }
         textarea { resize: none; }
         button { width: 100%; padding: 14px; margin: 10px 0; background: var(--primary); border: none; border-radius: 12px; color: white; font-weight: bold; cursor: pointer; font-size: 16px; }
@@ -22,34 +24,31 @@
         button.sm { width: auto; padding: 8px 16px; margin: 0; font-size: 14px; }
         button.danger { background: transparent; border: 1px solid #ff4757; color: #ff4757; margin-top: 20px; }
         
+        /* Ошибки */
         .error-msg { color: #ff4757; text-align: center; font-size: 14px; margin-bottom: 10px; min-height: 20px; }
-        
-        /* Стили Админки */
-        .admin-row { background: var(--card); padding: 15px; border-radius: 15px; margin-bottom: 15px; display: flex; align-items: center; gap: 15px; }
-        .admin-row img { width: 60px; height: 60px; border-radius: 50%; object-fit: cover; }
-        .admin-info { flex: 1; }
-        .admin-actions { display: flex; gap: 10px; flex-direction: column; }
-        .btn-approve { background: #2ed573; padding: 8px; margin: 0; width: 40px; }
-        .btn-reject { background: #ff4757; padding: 8px; margin: 0; width: 40px; }
 
-        /* Элементы UI */
+        /* Аватар */
         .avatar-box { text-align: center; margin: 15px 0; }
         .avatar-preview { width: 110px; height: 110px; border-radius: 50%; object-fit: cover; border: 3px solid #333; display: inline-block; }
         .upload-label { color: var(--primary); display: block; margin-top: 5px; cursor: pointer; font-size: 14px; }
-        
+
+        /* Лента */
         .feed-card { height: 65vh; background: var(--card); border-radius: 20px; overflow: hidden; position: relative; }
         .feed-card img { width: 100%; height: 100%; object-fit: cover; }
         .feed-info { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(to top, black, transparent); padding: 20px; }
-        
+
+        /* Мэтчи */
         .matches-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
         .match-card { background: var(--card); border-radius: 15px; padding: 15px; text-align: center; display: flex; flex-direction: column; align-items: center; }
         .match-card img { width: 70px; height: 70px; border-radius: 50%; object-fit: cover; margin-bottom: 10px; border: 2px solid var(--primary); }
         .match-btn { background: var(--primary); border-radius: 20px; padding: 8px 20px; font-size: 13px; margin-top: auto; width: 100%; }
-        
+
+        /* Чаты */
         .chat-row { display: flex; align-items: center; padding: 12px; background: var(--card); border-radius: 12px; margin-bottom: 8px; cursor: pointer; }
         .chat-row img { width: 50px; height: 50px; border-radius: 50%; margin-right: 12px; object-fit: cover; }
         .badge { background: var(--primary); color: white; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 11px; margin-left: auto; }
-        
+
+        /* Чат окно */
         .full-chat { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 99; display: flex; flex-direction: column; transform: translateX(100%); transition: transform 0.3s ease; }
         .full-chat.open { transform: translateX(0); }
         .chat-header { padding: 15px; background: var(--card); display: flex; align-items: center; border-bottom: 1px solid #333; }
@@ -58,11 +57,21 @@
         .msg.me { background: var(--primary); align-self: flex-end; }
         .msg.him { background: #2f3542; align-self: flex-start; }
         .chat-footer { padding: 10px; background: var(--card); display: flex; gap: 10px; }
-        
+
+        /* Навигация */
         .nav { position: absolute; bottom: 0; width: 100%; height: 60px; background: #151515; display: flex; justify-content: space-around; align-items: center; border-top: 1px solid #333; }
         .nav-btn { font-size: 22px; opacity: 0.5; cursor: pointer; position: relative; }
         .nav-btn.active { opacity: 1; color: var(--primary); }
-        .nav-badge { position: absolute; top: -5px; right: -5px; background: red; color: white; border-radius: 50%; width: 16px; height: 16px; font-size: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid #151515; display: none; }
+        
+        /* Счетчик на кнопке навигации */
+        .nav-badge {
+            position: absolute; top: -5px; right: -5px;
+            background: red; color: white; border-radius: 50%;
+            width: 16px; height: 16px; font-size: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: bold; border: 2px solid #151515;
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -70,11 +79,11 @@
 <div class="app">
     <div id="scr-auth" class="screen active" style="text-align: center; padding-top: 40px;">
         <h1 style="color:var(--primary)">FindCoup</h1>
-        
         <div id="auth-forms">
             <input type="text" id="l_u" placeholder="Логин">
             <input type="password" id="l_p" placeholder="Пароль">
             <div id="login-err" class="error-msg"></div>
+            
             <button onclick="login()">Войти</button>
             <p onclick="toggleReg()" style="color:#777; cursor:pointer; font-size:14px;">Создать аккаунт</p>
             <p onclick="toggleReset()" style="color:#777; cursor:pointer; font-size:14px;">Забыли пароль?</p>
@@ -87,10 +96,10 @@
                     Загрузить фото <input type="file" style="display:none" onchange="upload(this, 'r_img')">
                 </label>
             </div>
-            <input type="text" id="r_u" placeholder="Логин (англ)">
+            <input type="text" id="r_u" placeholder="Логин (уникальный)">
             <input type="password" id="r_p" placeholder="Пароль">
-            <input type="text" id="r_n" placeholder="Имя">
-            <input type="text" id="r_key" placeholder="Секретное слово (для восстановления)">
+            <input type="text" id="r_n" placeholder="Отображаемое имя">
+            <input type="text" id="r_key" placeholder="Секретное слово">
             <textarea id="r_bio" placeholder="О себе" rows="2"></textarea>
             <select id="r_g"><option value="Парень">Я Парень</option><option value="Девушка">Я Девушка</option></select>
             <div id="reg-err" class="error-msg"></div>
@@ -107,15 +116,6 @@
             <button onclick="doReset()">Сменить пароль</button>
             <button class="outline" onclick="toggleReset()">Отмена</button>
         </div>
-    </div>
-
-    <div id="scr-admin" class="screen">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-            <h2>Заявки (<span id="adm-count">0</span>)</h2>
-            <button class="sm danger" onclick="location.reload()">Выход</button>
-        </div>
-        <p style="font-size:12px; color:#777; text-align:center;">Одобряйте только реальных людей</p>
-        <div id="admin-list">Loading...</div>
     </div>
 
     <div id="scr-feed" class="screen">
@@ -141,6 +141,7 @@
             <img id="p_img" class="avatar-preview" style="width:130px; height:130px;">
             <h2 id="p_name" style="margin-bottom: 5px;">Name</h2>
             <div id="p_bio" style="color: #aaa; margin: 10px 0; font-style: italic; white-space: pre-wrap;"></div>
+            
             <button class="outline" onclick="requestNotifPermission()">🔔 Включить уведомления</button>
             <button class="outline" onclick="openEdit()">✎ Редактировать профиль</button>
             <button class="danger" onclick="location.reload()">Выйти</button>
@@ -151,7 +152,9 @@
         <h2>Изменение профиля</h2>
         <div class="avatar-box">
             <img src="" id="e_img" class="avatar-preview">
-            <label class="upload-label">Сменить фото <input type="file" style="display:none" onchange="upload(this, 'e_img')"></label>
+            <label class="upload-label">
+                Сменить фото <input type="file" style="display:none" onchange="upload(this, 'e_img')">
+            </label>
         </div>
         <input type="text" id="e_n">
         <textarea id="e_bio" rows="4"></textarea>
@@ -182,66 +185,26 @@
 </div>
 
 <script>
-    // === НАСТРОЙКИ СЕТИ ===
-    // Оставляем пустым! Браузер сам поймет, куда слать (на локалхост или на Render)
-    const API_URL = ""; 
-
+    const API = ""; 
+    
     let ME = null;
-    let FEED = []; let CURR = null; let CHAT_USER = null;
+    let FEED = [];
+    let CURR = null;
+    let CHAT_USER = null;
     let TEMP_AVATAR = "https://via.placeholder.com/150"; 
     let EDIT_AVATAR_URL = "";
-    let UNREAD_INTERVAL = null; let LAST_NOTIF_ID = null;
     let POLLING = false;
+    let UNREAD_INTERVAL = null;
+    
+    // Переменная для хранения ID последнего уведомления, чтобы не спамить одним и тем же
+    let LAST_NOTIF_ID = null;
 
-    // === УНИВЕРСАЛЬНАЯ ФУНКЦИЯ ЗАПРОСА ===
-    async function req(ep, method="GET", data=null) {
-        try {
-            const opts = { 
-                method, 
-                headers: { 'Content-Type': 'application/json' } 
-            };
-            if(data) opts.body = JSON.stringify(data);
-
-            // Запрос уходит на текущий домен + эндпоинт (например: /login)
-            const r = await fetch(API_URL + ep, opts);
-            const json = await r.json().catch(() => ({})); // Защита от пустого ответа
-            
-            if(!r.ok) throw new Error(json.detail || "Ошибка сервера " + r.status);
-            return json;
-        } catch(e) { 
-            console.error("Fetch error:", e);
-            return { error: true, msg: e.message }; 
-        }
-    }
-
-    // === ЗАГРУЗКА ФОТО ===
-    async function upload(inp, imgId) {
-        const fd = new FormData();
-        fd.append("file", inp.files[0]);
-        const reader = new FileReader();
-        reader.onload = e => document.getElementById(imgId).src = e.target.result;
-        reader.readAsDataURL(inp.files[0]);
-        
-        try {
-            const r = await fetch(API_URL + "/upload", {method:"POST", body:fd});
-            if(r.ok) { 
-                const d = await r.json(); 
-                if(imgId === 'r_img') TEMP_AVATAR = d.url;
-                if(imgId === 'e_img') EDIT_AVATAR_URL = d.url;
-            } else {
-                alert("Ошибка загрузки фото");
-            }
-        } catch(e) { console.error(e); }
-    }
-
-    // === НАВИГАЦИЯ UI ===
+    // --- NAV ---
     function go(id, btn) {
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
         document.getElementById(id).classList.add('active');
-        
         const showNav = ['scr-feed', 'scr-matches', 'scr-chats', 'scr-profile'].includes(id);
         document.getElementById('nav').style.display = showNav ? 'flex' : 'none';
-
         if(btn) {
             document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
@@ -250,13 +213,11 @@
         if(id === 'scr-matches') loadMatches();
         if(id === 'scr-chats') loadChats();
         if(id === 'scr-profile') renderProfile();
-        if(id === 'scr-admin') loadAdminList();
     }
 
-    // === АВТОРИЗАЦИЯ ===
-    function toggleReg() { hideAuth(); document.getElementById('reg-forms').style.display = 'block'; }
-    function toggleReset() { hideAuth(); document.getElementById('reset-forms').style.display = 'block'; }
-    function hideAuth() {
+    function toggleReg() { hideAllAuth(); document.getElementById('reg-forms').style.display = 'block'; }
+    function toggleReset() { hideAllAuth(); document.getElementById('reset-forms').style.display = 'block'; }
+    function hideAllAuth() {
         document.getElementById('auth-forms').style.display = 'none';
         document.getElementById('reg-forms').style.display = 'none';
         document.getElementById('reset-forms').style.display = 'none';
@@ -264,25 +225,48 @@
     }
     document.querySelectorAll('.outline').forEach(b => {
         if(b.innerText === 'Назад' || b.innerText === 'Отмена') {
-           hideAuth(); document.getElementById('auth-forms').style.display = 'block';
+           b.onclick = () => { hideAllAuth(); document.getElementById('auth-forms').style.display = 'block'; };
         }
     });
 
+    // --- API ---
+    async function req(ep, method="GET", data=null) {
+        try {
+            const opts = { method, headers: {'Content-Type': 'application/json'} };
+            if(data) opts.body = JSON.stringify(data);
+            const r = await fetch(ep, opts);
+            const json = await r.json();
+            if(!r.ok) throw new Error(json.detail || "Ошибка");
+            return json;
+        } catch(e) { return { error: true, msg: e.message }; }
+    }
+
+    async function upload(inp, imgId) {
+        const fd = new FormData();
+        fd.append("file", inp.files[0]);
+        const reader = new FileReader();
+        reader.onload = e => document.getElementById(imgId).src = e.target.result;
+        reader.readAsDataURL(inp.files[0]);
+        const r = await fetch("/upload", {method:"POST", body:fd});
+        if(r.ok) { 
+            const d = await r.json(); 
+            if(imgId === 'r_img') TEMP_AVATAR = d.url;
+            if(imgId === 'e_img') EDIT_AVATAR_URL = d.url;
+        }
+    }
+
+    // --- AUTH ---
     async function login() {
         const u = document.getElementById('l_u').value;
         const p = document.getElementById('l_p').value;
-        const res = await req("/login", "POST", {username:u, password:p});
-        
+        const res = await req(`/login`, "POST", {username:u, password:p});
         if(res.error) {
             document.getElementById('login-err').innerText = res.msg;
         } else {
             ME = res;
-            if (ME.username === "admin") go('scr-admin');
-            else {
-                requestNotifPermission();
-                startUnreadPoller();
-                go('scr-feed');
-            }
+            requestNotifPermission(); // Просим разрешение сразу при входе
+            startUnreadPoller();
+            go('scr-feed');
         }
     }
 
@@ -294,16 +278,16 @@
         const k = document.getElementById('r_key').value;
         const g = document.getElementById('r_g').value;
 
-        const res = await req("/register", "POST", {
+        const res = await req(`/register`, "POST", {
             username:u, password:p, first_name:n, gender:g, bio:b, avatar_url:TEMP_AVATAR, secret_key: k
         });
-        
         if(res.error) {
             document.getElementById('reg-err').innerText = res.msg;
         } else {
-            alert("Регистрация успешна! Дождитесь одобрения администратора.");
-            hideAuth();
-            document.getElementById('auth-forms').style.display = 'block';
+            ME = res;
+            requestNotifPermission();
+            startUnreadPoller();
+            go('scr-feed');
         }
     }
 
@@ -313,72 +297,58 @@
         const np = document.getElementById('res_new_p').value;
         const res = await req("/reset_password", "POST", {username:u, secret_key:k, new_password:np});
         if(res.error) document.getElementById('reset-err').innerText = res.msg;
-        else { alert("Пароль изменен!"); hideAuth(); document.getElementById('auth-forms').style.display = 'block'; }
+        else { alert("Пароль изменен!"); hideAllAuth(); document.getElementById('auth-forms').style.display = 'block'; }
     }
 
-    // === АДМИНКА ===
-    async function loadAdminList() {
-        const list = await req("/admin/pending");
-        const cont = document.getElementById('admin-list');
-        cont.innerHTML = "";
-        
-        if (list.error || !list || list.length === 0) {
-            cont.innerHTML = "<p style='text-align:center; color:#555'>Заявок нет</p>";
-            document.getElementById('adm-count').innerText = "0";
+    // --- УВЕДОМЛЕНИЯ ---
+    function requestNotifPermission() {
+        if (!("Notification" in window)) {
+            alert("Ваш браузер не поддерживает уведомления");
             return;
         }
-
-        document.getElementById('adm-count').innerText = list.length;
-        
-        list.forEach(u => {
-            const row = document.createElement('div');
-            row.className = 'admin-row';
-            row.innerHTML = `
-                <img src="${u.avatar_url}">
-                <div class="admin-info">
-                    <b>${u.first_name}</b> (@${u.username})<br>
-                    <small style="color:#aaa">${u.gender}</small><br>
-                    <span style="font-size:13px">${u.bio || "Без описания"}</span>
-                </div>
-                <div class="admin-actions">
-                    <button class="btn-approve" onclick="adminDecide('${u.username}', 'approve')">✅</button>
-                    <button class="btn-reject" onclick="adminDecide('${u.username}', 'reject')">❌</button>
-                </div>
-            `;
-            cont.appendChild(row);
+        Notification.requestPermission().then(permission => {
+            if (permission === "granted") console.log("Уведомления разрешены");
         });
     }
 
-    async function adminDecide(username, action) {
-        if(!confirm(`Вы уверены?`)) return;
-        const res = await req("/admin/decision", "POST", {target_username: username, action: action});
-        if(!res.error) loadAdminList();
-        else alert("Ошибка: " + res.msg);
-    }
-
-    // === ПУШИ И УВЕДОМЛЕНИЯ ===
-    function requestNotifPermission() { if("Notification" in window) Notification.requestPermission(); }
     function startUnreadPoller() {
         if(UNREAD_INTERVAL) clearInterval(UNREAD_INTERVAL);
-        pollUnread(); UNREAD_INTERVAL = setInterval(pollUnread, 3000); 
-    }
-    async function pollUnread() {
-        if(!ME || ME.username === 'admin') return;
-        const res = await req(`/check_unread?email=${ME.email}`);
-        const badge = document.getElementById('nav-msg-badge');
-        if(res && res.count > 0) {
-            badge.style.display = 'flex'; badge.innerText = res.count > 9 ? '9+' : res.count;
-            if (res.latest && res.latest.id !== LAST_NOTIF_ID) {
-                LAST_NOTIF_ID = res.latest.id;
-                const chatIsOpen = (CHAT_USER && document.getElementById('chat-win').classList.contains('open'));
-                if (!chatIsOpen && Notification.permission === "granted") {
-                    new Notification(`Сообщение от ${res.latest.sender}`, { body: res.latest.text });
-                }
-            }
-        } else { badge.style.display = 'none'; }
+        pollUnread();
+        UNREAD_INTERVAL = setInterval(pollUnread, 3000); 
     }
 
-    // === ОСНОВНОЙ ФУНКЦИОНАЛ ===
+    async function pollUnread() {
+        if(!ME) return;
+        const res = await req(`/check_unread?email=${ME.email}`);
+        
+        // 1. Обновляем кружок уведомлений
+        const badge = document.getElementById('nav-msg-badge');
+        if(res && res.count > 0) {
+            badge.style.display = 'flex';
+            badge.innerText = res.count > 9 ? '9+' : res.count;
+            
+            // 2. Логика Push-уведомлений
+            // Если есть сообщение, и его ID отличается от того, который мы уже показывали
+            // И если мы сейчас НЕ внутри чата с этим человеком (чтобы не спамить, когда смотришь переписку)
+            if (res.latest && res.latest.id !== LAST_NOTIF_ID) {
+                LAST_NOTIF_ID = res.latest.id;
+                
+                // Проверяем, открыт ли сейчас чат с этим отправителем
+                const chatIsOpen = (CHAT_USER && document.getElementById('chat-win').classList.contains('open'));
+                
+                if (!chatIsOpen && Notification.permission === "granted") {
+                    new Notification(`Новое сообщение от ${res.latest.sender}`, {
+                        body: res.latest.text,
+                        icon: 'https://cdn-icons-png.flaticon.com/512/724/724715.png' // Иконка сообщения
+                    });
+                }
+            }
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+
+    // --- ОСТАЛЬНАЯ ЛОГИКА ---
     function renderProfile() {
         document.getElementById('p_img').src = ME.avatar_url;
         document.getElementById('p_name').innerText = ME.first_name;
@@ -410,12 +380,16 @@
         CURR = FEED.pop();
         area.innerHTML = `<div class="feed-card"><img src="${CURR.avatar_url}"><div class="feed-info"><h2 style="margin-bottom:5px">${CURR.first_name}, @${CURR.username}</h2><p style="margin:0; opacity:0.8">${CURR.bio || ""}</p></div></div>`;
     }
-    async function doLike() { if(!CURR) return; await req("/like", "POST", {from_email: ME.email, to_email: CURR.email}); nextCard(); }
+    async function doLike() {
+        if(!CURR) return;
+        await req("/like", "POST", {from_email: ME.email, to_email: CURR.email});
+        nextCard();
+    }
     async function loadMatches() {
         const list = await req(`/matches?email=${ME.email}`);
         const grid = document.getElementById('matches-grid');
         grid.innerHTML = "";
-        if(!list || list.length === 0) grid.innerHTML = "<p>Нет пар</p>";
+        if(!list || !list.length) grid.innerHTML = "<p>Нет пар</p>";
         else list.forEach(u => {
             const div = document.createElement('div');
             div.className = 'match-card';
@@ -438,18 +412,19 @@
             });
         }
     }
-    
-    // === ЧАТ ===
     function openChat(user) {
         CHAT_USER = user;
         document.getElementById('c_title').innerText = user.first_name;
         document.getElementById('chat-win').classList.add('open');
-        POLLING = true; pollChat();
+        POLLING = true;
+        pollChat();
     }
     function closeChat() {
         document.getElementById('chat-win').classList.remove('open');
-        POLLING = false; CHAT_USER = null;
-        go('scr-chats'); pollUnread(); 
+        POLLING = false;
+        CHAT_USER = null;
+        go('scr-chats'); 
+        pollUnread(); 
     }
     async function pollChat() {
         if(!POLLING || !CHAT_USER) return;
@@ -464,7 +439,8 @@
     async function sendMsg() {
         const inp = document.getElementById('c_in');
         const txt = inp.value.trim();
-        if(!txt) return; inp.value = "";
+        if(!txt) return;
+        inp.value = "";
         document.getElementById('c_box').innerHTML += `<div class="msg me">${txt}</div>`;
         document.getElementById('c_box').scrollTop = 99999;
         await req("/message", "POST", {sender_email:ME.email, receiver_email:CHAT_USER.email, text:txt});
